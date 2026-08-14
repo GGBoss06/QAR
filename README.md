@@ -223,7 +223,7 @@ $env:TEST_DB_PASSWORD="你的测试数据库密码"
 - 生产数据、上传文件、日志和调试输出
 - HTTPS 私钥、云平台凭据或访问令牌
 
-更多数据库说明见 [DATABASE.md](./securitysystem/securitysystem/DATABASE.md)，传输抓包验证见 [wireshark_capture_guide.md](./wireshark_capture_guide.md)。
+更多数据库说明见 [DATABASE.md](./securitysystem/securitysystem/DATABASE.md)。
 
 ## 许可证
 
