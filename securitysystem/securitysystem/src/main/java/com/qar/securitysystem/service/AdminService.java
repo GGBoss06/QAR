@@ -147,7 +147,6 @@ public class AdminService {
         u.setPersonId(pr.getId());
         u.setRole(UserRole.USER);
         u.setCreatedAt(Instant.now());
-        u.setPublicKey(e.getPublicKey());
         u.setAccessEnabled(true);
         userRepository.save(u);
         latticeUserSecretKeyService.issueForUser(u, "account_approved");

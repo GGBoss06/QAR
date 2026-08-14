@@ -468,7 +468,7 @@ function setQarSortHeader(thead) {
 
 async function refreshQar() {
   try {
-    const rows = await TransportCrypto.fetch(`/api/admin/qar-table/rows?sortBy=${encodeURIComponent(qarSortBy)}&sortDir=${encodeURIComponent(qarSortDir)}`, { method: "GET" })
+    const rows = await apiFetch(`/api/admin/qar-table/rows?sortBy=${encodeURIComponent(qarSortBy)}&sortDir=${encodeURIComponent(qarSortDir)}`, { method: "GET" })
     qarRows = rows || []
     qarColumns = buildQarColumns(qarRows)
     renderQarTable()
@@ -530,14 +530,14 @@ async function onQarSaveRow() {
   const id = (document.getElementById("qar-row-id").value || "").trim()
   try {
     if (id) {
-      await TransportCrypto.fetch(`/api/admin/qar-table/rows/${encodeURIComponent(id)}`, {
+      await apiFetch(`/api/admin/qar-table/rows/${encodeURIComponent(id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data })
       })
       showToast("已写入", "记录已更新", "success")
     } else {
-      await TransportCrypto.fetch("/api/admin/qar-table/rows", {
+      await apiFetch("/api/admin/qar-table/rows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data })
@@ -559,7 +559,7 @@ async function onQarPreviewXlsx() {
   const file = fileInput.files[0]
   try {
     const b64 = await fileToB64(file)
-    const preview = await TransportCrypto.fetch("/api/admin/qar-table/xlsx/preview-b64?maxRows=20", {
+    const preview = await apiFetch("/api/admin/qar-table/xlsx/preview-b64?maxRows=20", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, dataBase64: b64 })
@@ -580,7 +580,7 @@ async function onQarImportXlsx() {
   const file = fileInput.files[0]
   try {
     const b64 = await fileToB64(file)
-    const resp = await TransportCrypto.fetch("/api/admin/qar-table/xlsx/import-b64", {
+    const resp = await apiFetch("/api/admin/qar-table/xlsx/import-b64", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, dataBase64: b64 })

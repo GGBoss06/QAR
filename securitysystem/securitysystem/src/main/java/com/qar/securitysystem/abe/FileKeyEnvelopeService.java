@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qar.securitysystem.abe.lattice.LatticeAbeService;
 import com.qar.securitysystem.model.FileRecordEntity;
 import com.qar.securitysystem.model.UserEntity;
-import com.qar.securitysystem.service.ServerKeyPairService;
 import com.qar.securitysystem.util.AesGcmUtil;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -22,7 +21,6 @@ public class FileKeyEnvelopeService {
     public static final String LABE_PREFIX = "LABE_PROTO_BC:";
     public static final String LATTICE_PREFIX = LatticeAbeService.LATTICE_PREFIX;
 
-    private final ServerKeyPairService serverKeyPairService;
     private final AttributeAuthorityService attributeAuthorityService;
     private final LatticeAbeService latticeAbeService;
     private final ObjectMapper objectMapper;
@@ -30,8 +28,7 @@ public class FileKeyEnvelopeService {
 
     private volatile SecretKey masterKey;
 
-    public FileKeyEnvelopeService(ServerKeyPairService serverKeyPairService, AttributeAuthorityService attributeAuthorityService, LatticeAbeService latticeAbeService, ObjectMapper objectMapper) {
-        this.serverKeyPairService = serverKeyPairService;
+    public FileKeyEnvelopeService(AttributeAuthorityService attributeAuthorityService, LatticeAbeService latticeAbeService, ObjectMapper objectMapper) {
         this.attributeAuthorityService = attributeAuthorityService;
         this.latticeAbeService = latticeAbeService;
         this.objectMapper = objectMapper;
@@ -60,7 +57,7 @@ public class FileKeyEnvelopeService {
     public byte[] unwrapForUser(FileRecordEntity record, UserEntity user, AccessPurpose purpose) {
         String wrappedKey = record == null ? null : record.getWrappedKey();
         if (!isLabeEnvelope(wrappedKey)) {
-            return serverKeyPairService.unwrapKey(wrappedKey);
+            throw new IllegalStateException("unsupported_file_key_envelope");
         }
         String policy = record == null ? null : record.getPolicy();
         if (!attributeAuthorityService.canUserAccess(policy, user)) {
@@ -75,7 +72,7 @@ public class FileKeyEnvelopeService {
     public byte[] unwrapForSystem(FileRecordEntity record, AccessPurpose purpose) {
         String wrappedKey = record == null ? null : record.getWrappedKey();
         if (!isLabeEnvelope(wrappedKey)) {
-            return serverKeyPairService.unwrapKey(wrappedKey);
+            throw new IllegalStateException("unsupported_file_key_envelope");
         }
         String policy = record == null ? null : record.getPolicy();
         if (!attributeAuthorityService.canSystemAccess(policy, purpose)) {

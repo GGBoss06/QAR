@@ -1,4 +1,14 @@
+function isSecureTransportReady() {
+  if (window.location.protocol === "https:") return true
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+}
+
+function requireSecureTransport() {
+  if (!isSecureTransportReady()) throw new Error(mapErrorMessage("https_required"))
+}
+
 async function apiFetch(path, opts) {
+  requireSecureTransport()
   const headers = Object.assign({"Accept": "application/json"}, opts && opts.headers ? opts.headers : {})
   const method = (opts && opts.method ? opts.method : "GET").toUpperCase()
   if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
@@ -38,9 +48,7 @@ function mapErrorMessage(msg) {
     "invalid_file_payload": "上传文件内容解析失败，请重新选择文件后重试",
     "data_too_large_or_invalid": "上传数据过大或格式不合法，请检查后重试",
     "wrapped_key_required": "缺少密钥封装数据，请刷新页面后重试",
-    "transport_wrapped_key_required": "传输密钥缺失，已建议重新握手，请重试上传",
-    "transport_handshake_timeout": "传输握手超时，请确认服务端已启动并重新登录后重试",
-    "unsupported_transport": "当前传输加密协议不可用，请刷新页面后重试",
+    "https_required": "当前地址未启用 HTTPS，已阻止非本机的不安全请求",
     "invalid_credentials": "账号或密码错误",
     "unauthorized": "未登录或会话已过期，请重新登录",
     "forbidden": "无权限访问",

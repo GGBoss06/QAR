@@ -8,6 +8,7 @@ public class AppSecurityProperties {
     private boolean cookieSecure;
     private String cookieSameSite;
     private int sessionTtlMinutes;
+    private boolean requireHttps;
 
     public String getCookieName() {
         return cookieName;
@@ -39,6 +40,14 @@ public class AppSecurityProperties {
 
     public void setSessionTtlMinutes(int sessionTtlMinutes) {
         this.sessionTtlMinutes = sessionTtlMinutes;
+    }
+
+    public boolean isRequireHttps() {
+        return requireHttps;
+    }
+
+    public void setRequireHttps(boolean requireHttps) {
+        this.requireHttps = requireHttps;
     }
 }
 

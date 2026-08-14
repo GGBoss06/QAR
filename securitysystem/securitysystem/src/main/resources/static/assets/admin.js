@@ -60,7 +60,6 @@ function protectionTypeLabel(status) {
   const labels = {
     ATTRIBUTE_CONTROLLED: "属性访问控制",
     LEGACY_ATTRIBUTE: "旧版属性控制",
-    LEGACY_RSA: "旧版加密",
     ENCRYPTED: "已加密",
     UNPROTECTED: "未加密",
   }

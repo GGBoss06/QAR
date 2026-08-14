@@ -52,7 +52,6 @@ async function ensureAdmin() {
   if (dropdownAirline) dropdownAirline.textContent = me.airline || "-"
   if (dropdownPosition) dropdownPosition.textContent = me.positionTitle || "-"
   if (dropdownDept) dropdownDept.textContent = me.department || "-"
-  await TransportCrypto.ensureSession()
   return me
 }
 
@@ -222,7 +221,7 @@ function renderAll() {
 }
 
 async function refreshFiles() {
-  const files = await TransportCrypto.fetch("/api/admin/flight-xlsx/files", { method: "GET" })
+  const files = await apiFetch("/api/admin/flight-xlsx/files", { method: "GET" })
   state.files = files || []
   const sel = document.getElementById("file-select")
   sel.innerHTML = ""
@@ -283,7 +282,7 @@ async function loadPreview(silent = false) {
     return { ok: false, error: new Error("未选择文件") }
   }
   try {
-    const resp = await TransportCrypto.fetch(`/api/admin/flight-xlsx/files/${encodeURIComponent(state.fileId)}/preview?maxRows=20000`, { method: "GET" })
+    const resp = await apiFetch(`/api/admin/flight-xlsx/files/${encodeURIComponent(state.fileId)}/preview?maxRows=20000`, { method: "GET" })
     state.fileLabel = resp.originalName || ""
     state.sheets = resp.sheets || []
     state.sheetIndex = 0

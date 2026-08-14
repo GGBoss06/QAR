@@ -1,11 +1,8 @@
 package com.qar.securitysystem;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qar.securitysystem.model.PersonRecordEntity;
 import com.qar.securitysystem.repo.PersonRecordRepository;
-import com.qar.securitysystem.util.AesGcmUtil;
 import com.qar.securitysystem.util.IdUtil;
-import com.qar.securitysystem.util.RSAUtil;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,11 +18,8 @@ import org.springframework.web.context.WebApplicationContext;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 
 import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
-import java.security.PublicKey;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -53,8 +47,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         }
 )
 public class AuthAndFileFlowTests {
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     @Autowired
     private WebApplicationContext wac;
 
@@ -77,7 +69,7 @@ public class AuthAndFileFlowTests {
     }
 
     @Test
-    void transport_encrypted_upload_works() throws Exception {
+    void json_upload_works_without_custom_key_handshake() throws Exception {
         PersonRecordEntity pr = new PersonRecordEntity();
         pr.setId(IdUtil.newId());
         pr.setPersonNo("20260001");
@@ -103,61 +95,21 @@ public class AuthAndFileFlowTests {
         String adminToken = adminSetCookie.split("QAR_SESSION=")[1].split(";", 2)[0];
         Cookie adminCookie = new Cookie("QAR_SESSION", adminToken);
 
-        String handshakeJson = mvc.perform(post("/api/transport/handshake")
-                        .cookie(adminCookie)
-                        .with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"protocol\":\"tls\"}"))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        String serverPublicKeyBase64 = OBJECT_MAPPER.readTree(handshakeJson).get("serverPublicKey").asText();
-        PublicKey serverPublicKey = RSAUtil.getPublicKey(serverPublicKeyBase64);
-
-        javax.crypto.SecretKey aesKey = AesGcmUtil.generateKey();
-        byte[] transportIv = AesGcmUtil.newIv();
         String requestBody = """
-                {"encryptedData":"aGVsbG8tdHJhbnNwb3J0LXVwbG9hZA==","wrappedKey":"","originalName":"transport.txt","contentType":"text/plain","sizeBytes":22,"policy":"role:user personNo:20260001","personNo":"20260001"}
+                {"encryptedData":"aGVsbG8taHR0cHMtdXBsb2Fk","wrappedKey":"","originalName":"https.txt","contentType":"text/plain","sizeBytes":18,"policy":"role:user personNo:20260001","personNo":"20260001"}
                 """.trim();
-        byte[] transportCiphertext = AesGcmUtil.encrypt(
-                aesKey,
-                transportIv,
-                requestBody.getBytes(StandardCharsets.UTF_8),
-                "POST /api/files/encrypted".getBytes(StandardCharsets.UTF_8)
-        );
-        String transportEnvelope = OBJECT_MAPPER.writeValueAsString(Map.of(
-                "iv", Base64.getEncoder().encodeToString(transportIv),
-                "ciphertext", Base64.getEncoder().encodeToString(transportCiphertext)
-        ));
-        String wrappedTransportKey = Base64.getEncoder().encodeToString(RSAUtil.encrypt(aesKey.getEncoded(), serverPublicKey));
-
-        String encryptedResponse = mvc.perform(post("/api/files/encrypted")
+        String responseJson = mvc.perform(post("/api/files/encrypted")
                         .cookie(adminCookie)
                         .with(csrf())
-                        .header("X-QAR-Encrypted", "1")
-                        .header("X-QAR-Transport", "tls")
-                        .header("X-QAR-Wrapped-Key", wrappedTransportKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(transportEnvelope))
+                        .content(requestBody))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-
-        String responseIvBase64 = OBJECT_MAPPER.readTree(encryptedResponse).get("iv").asText();
-        String responseCiphertextBase64 = OBJECT_MAPPER.readTree(encryptedResponse).get("ciphertext").asText();
-        byte[] responsePlain = AesGcmUtil.decrypt(
-                aesKey,
-                Base64.getDecoder().decode(responseIvBase64),
-                Base64.getDecoder().decode(responseCiphertextBase64),
-                "POST /api/files/encrypted".getBytes(StandardCharsets.UTF_8)
-        );
-        String responseJson = new String(responsePlain, StandardCharsets.UTF_8);
 
         assertThat(responseJson).contains("\"id\"");
-        assertThat(responseJson).contains("\"transport.txt\"");
+        assertThat(responseJson).contains("\"https.txt\"");
     }
 
     @Test

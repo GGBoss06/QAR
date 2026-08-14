@@ -5,9 +5,6 @@ import com.qar.securitysystem.security.StatelessCsrfTokenRepository;
 import com.qar.securitysystem.security.AuditLogFilter;
 import com.qar.securitysystem.service.AuditLogService;
 import com.qar.securitysystem.service.SessionService;
-import com.qar.securitysystem.transport.TransportCryptoFilter;
-import com.qar.securitysystem.transport.TransportSessionService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -37,12 +34,10 @@ public class SecurityConfig {
     }
 
     @Bean
-    public TransportCryptoFilter transportCryptoFilter(TransportSessionService transportSessionService, ObjectMapper objectMapper) {
-        return new TransportCryptoFilter(transportSessionService, objectMapper);
-    }
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, SessionAuthFilter sessionAuthFilter, TransportCryptoFilter transportCryptoFilter, AuditLogFilter auditLogFilter) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   SessionAuthFilter sessionAuthFilter,
+                                                   AuditLogFilter auditLogFilter,
+                                                   AppSecurityProperties securityProperties) throws Exception {
         StatelessCsrfTokenRepository csrfRepository = new StatelessCsrfTokenRepository(Duration.ofHours(1));
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         http
@@ -65,7 +60,6 @@ public class SecurityConfig {
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(sessionAuthFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(transportCryptoFilter, SessionAuthFilter.class)
                 .addFilterAfter(auditLogFilter, SessionAuthFilter.class)
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint())
@@ -85,6 +79,10 @@ public class SecurityConfig {
                             response.setHeader("Referrer-Policy", "no-referrer");
                             response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
                         }));
+
+        if (securityProperties.isRequireHttps()) {
+            http.requiresChannel(channel -> channel.anyRequest().requiresSecure());
+        }
 
         return http.build();
     }

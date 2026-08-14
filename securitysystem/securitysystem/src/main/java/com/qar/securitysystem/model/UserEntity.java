@@ -32,9 +32,6 @@ public class UserEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @Column(name = "public_key", length = 2048)
-    private String publicKey;
-
     @Column(name = "access_enabled")
     private Boolean accessEnabled;
 
@@ -90,14 +87,6 @@ public class UserEntity {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
-    }
-
-    public String getPublicKey() {
-        return publicKey;
-    }
-
-    public void setPublicKey(String publicKey) {
-        this.publicKey = publicKey;
     }
 
     public Boolean getAccessEnabled() {

@@ -432,7 +432,7 @@ async function bindPolicyBuilder(me) {
   setPolicyTemplate(uploadPolicyState.template)
 }
 
-async function checkTransportCrypto() {
+async function checkTransportSecurity() {
   const statusEl = document.getElementById("crypto-status")
   if (statusEl) {
     statusEl.textContent = "检查中..."
@@ -440,29 +440,17 @@ async function checkTransportCrypto() {
   }
   
   try {
-    await TransportCrypto.ensureSession()
-    if (!window.crypto || !window.crypto.subtle) {
-      if (statusEl) {
-        statusEl.textContent = "✓ 明文传输模式"
-        statusEl.className = "badge ok"
-      }
-    } else {
-      if (statusEl) {
-        statusEl.textContent = "✓ TLS传输加密已建立"
-        statusEl.className = "badge ok"
-      }
+    requireSecureTransport()
+    if (statusEl) {
+      statusEl.textContent = window.location.protocol === "https:"
+        ? "✓ HTTPS 安全传输"
+        : "本机 HTTP 调试模式"
+      statusEl.className = "badge ok"
     }
     return true
   } catch (e) {
-    const msg = (e && e.message) || ""
     if (statusEl) {
-      if (msg === "transport_handshake_timeout") {
-        statusEl.textContent = "✗ 握手超时"
-      } else if (msg.includes("未登录") || msg.includes("会话")) {
-        statusEl.textContent = "✗ 会话失效"
-      } else {
-        statusEl.textContent = "✗ TLS传输加密不可用"
-      }
+      statusEl.textContent = "✗ 必须启用 HTTPS"
       statusEl.className = "badge danger"
     }
     return false
@@ -470,7 +458,7 @@ async function checkTransportCrypto() {
 }
 
 async function refreshList() {
-  const rows = await TransportCrypto.fetch("/api/files", { method: "GET" })
+  const rows = await apiFetch("/api/files", { method: "GET" })
   const tbody = document.querySelector("#tbl tbody")
   tbody.innerHTML = ""
   document.getElementById("empty").style.display = rows.length ? "none" : "block"
@@ -493,7 +481,7 @@ async function refreshList() {
 
 async function refreshStats() {
   try {
-    const stats = await TransportCrypto.fetch("/api/files/stats", { method: "GET" })
+    const stats = await apiFetch("/api/files/stats", { method: "GET" })
     const totalUploadsEl = document.getElementById("total-uploads")
     const availableDataEl = document.getElementById("available-data")
     if (totalUploadsEl) {
@@ -572,9 +560,9 @@ async function onUpload() {
   }
   
   await initCsrf()
-  const ready = await checkTransportCrypto()
+  const ready = await checkTransportSecurity()
   if (!ready) {
-    showToast("传输异常", "TLS传输加密未建立，请刷新后重试", "danger")
+    showToast("传输异常", "当前地址未启用 HTTPS", "danger")
     return
   }
   
@@ -596,7 +584,7 @@ async function onUpload() {
       personNo: uploadPolicyState.template === "personal" ? targetPersonNo : ""
     }
     
-    const resp = await TransportCrypto.fetch("/api/files/encrypted", {
+    const resp = await apiFetch("/api/files/encrypted", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(uploadData)
@@ -622,9 +610,9 @@ async function onUpload() {
 
 async function onDownload(fileId) {
   try {
-    await checkTransportCrypto()
+    await checkTransportSecurity()
     showToast("下载中", "正在获取数据...", "info")
-    const resp = await TransportCrypto.fetch(`/api/files/${fileId}/payload`, { method: "GET" })
+    const resp = await apiFetch(`/api/files/${fileId}/payload`, { method: "GET" })
     const blob = base64ToBlob(resp.dataBase64, resp.contentType)
     downloadBlob(blob, resp.originalName || "download.bin")
     showToast("下载完成", "文件已保存", "success")
@@ -666,7 +654,7 @@ async function main() {
     btnLogout.addEventListener("click", onLogout)
   }
   
-  await checkTransportCrypto()
+  await checkTransportSecurity()
   await refreshStats()
   
   if (me.role === "admin") {

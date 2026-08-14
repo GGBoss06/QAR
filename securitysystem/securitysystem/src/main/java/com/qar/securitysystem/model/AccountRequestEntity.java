@@ -56,9 +56,6 @@ public class AccountRequestEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    @Column(name = "public_key", length = 2048)
-    private String publicKey;
-
     public String getId() {
         return id;
     }
@@ -171,12 +168,5 @@ public class AccountRequestEntity {
         this.createdAt = createdAt;
     }
 
-    public String getPublicKey() {
-        return publicKey;
-    }
-
-    public void setPublicKey(String publicKey) {
-        this.publicKey = publicKey;
-    }
 }
 

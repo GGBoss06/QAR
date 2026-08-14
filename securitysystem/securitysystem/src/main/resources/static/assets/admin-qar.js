@@ -34,7 +34,6 @@ async function ensureAdmin() {
   if (dropdownAirline) dropdownAirline.textContent = me.airline || "-"
   if (dropdownPosition) dropdownPosition.textContent = me.positionTitle || "-"
   if (dropdownDept) dropdownDept.textContent = me.department || "-"
-  await TransportCrypto.ensureSession()
   return me
 }
 
@@ -82,7 +81,7 @@ function cellText(v) {
 }
 
 async function refresh() {
-  const rows = await TransportCrypto.fetch(`/api/admin/qar-table/rows?sortBy=${encodeURIComponent(state.sortBy)}&sortDir=${encodeURIComponent(state.sortDir)}`, { method: "GET" })
+  const rows = await apiFetch(`/api/admin/qar-table/rows?sortBy=${encodeURIComponent(state.sortBy)}&sortDir=${encodeURIComponent(state.sortDir)}`, { method: "GET" })
   const table = document.getElementById("qar-table")
   const thead = table.querySelector("thead")
   const tbody = table.querySelector("tbody")
@@ -137,14 +136,14 @@ async function onSaveRow() {
   const id = (document.getElementById("row-id").value || "").trim()
   try {
     if (id) {
-      await TransportCrypto.fetch(`/api/admin/qar-table/rows/${encodeURIComponent(id)}`, {
+      await apiFetch(`/api/admin/qar-table/rows/${encodeURIComponent(id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data })
       })
       showToast("已写入", "记录已更新", "success")
     } else {
-      await TransportCrypto.fetch("/api/admin/qar-table/rows", {
+      await apiFetch("/api/admin/qar-table/rows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data })
@@ -193,7 +192,7 @@ async function onPreviewXlsx() {
   const file = fileInput.files[0]
   try {
     const b64 = await fileToB64(file)
-    const preview = await TransportCrypto.fetch("/api/admin/qar-table/xlsx/preview-b64?maxRows=20", {
+    const preview = await apiFetch("/api/admin/qar-table/xlsx/preview-b64?maxRows=20", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, dataBase64: b64 })
@@ -214,7 +213,7 @@ async function onImportXlsx() {
   const file = fileInput.files[0]
   try {
     const b64 = await fileToB64(file)
-    const resp = await TransportCrypto.fetch("/api/admin/qar-table/xlsx/import-b64", {
+    const resp = await apiFetch("/api/admin/qar-table/xlsx/import-b64", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, dataBase64: b64 })

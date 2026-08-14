@@ -1,7 +1,6 @@
 package com.qar.securitysystem.controller;
 
 import com.qar.securitysystem.abe.AccessPurpose;
-import com.qar.securitysystem.dto.EncryptedFileResponse;
 import com.qar.securitysystem.dto.EncryptedFileUploadRequest;
 import com.qar.securitysystem.dto.FileRecordResponse;
 import com.qar.securitysystem.dto.PlainFilePayloadResponse;
@@ -165,22 +164,6 @@ public class FilesController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + safeFilename(r.getOriginalName()) + "\"")
                 .contentType(MediaType.parseMediaType(r.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : r.getContentType()))
                 .body(raw);
-    }
-
-    @GetMapping("/{id}/encrypted")
-    public ResponseEntity<EncryptedFileResponse> downloadEncrypted(Authentication authentication, @PathVariable("id") String id) {
-        AppPrincipal p = SecurityUtil.requirePrincipal(authentication);
-        FileRecordEntity r = fileService.getRecordOrNull(id);
-        if (r == null) {
-            return ResponseEntity.status(404).build();
-        }
-        boolean isAdmin = p.getRole().name().equals("ADMIN");
-        UserEntity user = userRepository.findById(p.getUserId()).orElseThrow();
-        if (!isAdmin && !fileService.canUserAccess(r, user)) {
-            return ResponseEntity.status(403).build();
-        }
-        EncryptedFileResponse resp = fileService.getEncryptedDataForUser(r, user, AccessPurpose.USER_DOWNLOAD);
-        return ResponseEntity.ok(resp);
     }
 
     @GetMapping("/{id}/payload")

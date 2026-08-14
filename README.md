@@ -2,7 +2,7 @@
 
 面向航空 QAR（快速存取记录器）数据的安全管理研究原型。项目将人员档案、账号审批、文件管理、飞行数据和审计能力整合在一个 Spring Boot 应用中，并采用“**AES-256-GCM 加密文件主体 + Kyber768 封装文件密钥 + 属性策略控制访问**”的混合加密路线。
 
-> 当前项目用于课题研究和功能验证，不应直接作为生产级密码系统使用。应用层加密只是补充保护，正式部署仍必须启用 HTTPS。
+> 当前项目用于课题研究和功能验证，不应直接作为生产级密码系统使用。网络传输安全由标准 HTTPS/TLS 提供，正式部署必须配置受信任证书。
 
 ## 当前实现
 
@@ -23,7 +23,7 @@
 | 前端 | HTML、CSS、原生 JavaScript、Web Crypto API |
 | 文件加密 | AES-256-GCM |
 | 密钥封装 | Bouncy Castle Kyber768 KEM |
-| 应用层传输保护 | AES-256-GCM + RSA-OAEP 临时密钥封装 |
+| 网络传输保护 | HTTPS/TLS（由反向代理、网关或部署平台提供） |
 | 表格处理 | Apache POI |
 | 构建与测试 | Maven Wrapper、JUnit |
 
@@ -55,11 +55,11 @@
 
 ### 下载与预览
 
-服务器先校验登录身份、角色和属性策略，再按需恢复文件数据密钥并解密文件。普通下载、管理员预览和导出过程中，服务器内存会短暂出现明文；浏览器与服务器之间的应用层加密不能消除服务器被完全控制后的泄露风险。
+服务器先校验登录身份、角色和属性策略，再按需恢复文件数据密钥并解密文件。普通下载、管理员预览和导出过程中，服务器内存会短暂出现明文；HTTPS 不能消除服务器被完全控制后的泄露风险。
 
-### 应用层传输保护
+### 网络传输保护
 
-浏览器按请求生成临时 AES 密钥，并用服务端 RSA 公钥封装该密钥。该机制保护指定 API 请求体，但它不是 TLS，也不能替代 HTTPS。生产环境应通过 Nginx、Caddy、网关或云负载均衡器配置受信任证书和 HTTPS。
+项目不再实现自定义浏览器密钥握手，所有 API 传输统一依赖标准 HTTPS/TLS。`localhost` 可使用 HTTP 调试；非本机地址的前端请求会拒绝在 HTTP 下发送。生产环境应通过 Nginx、Caddy、网关或云负载均衡器配置受信任证书，并在后端启用 HTTPS 强制跳转。
 
 ### 安全边界
 
@@ -136,14 +136,18 @@ Set-Location .\securitysystem\securitysystem
 | `APP_ADMIN_USERNAME` | 初始管理员用户名 | `admin` |
 | `APP_ADMIN_PASSWORD` | 初始管理员密码 | 空 |
 | `APP_COOKIE_SECURE` | 是否仅通过 HTTPS 发送认证 Cookie | `false` |
+| `APP_REQUIRE_HTTPS` | 后端是否强制使用 HTTPS | `false` |
+| `APP_FORWARD_HEADERS_STRATEGY` | 是否识别反向代理转发协议头 | `none` |
 | `APP_FILE_MAX_BYTES` | 应用层文件大小上限 | `26214400`（25 MiB） |
 | `APP_LATTICE_ATTRIBUTE_DIR` | 属性密钥材料目录 | `data/crypto/lattice-attributes` |
 | `APP_MIGRATE_LEGACY_ENVELOPES` | 启动时迁移旧密钥信封 | `true` |
 
-本地通过 HTTP 调试时保留 `APP_COOKIE_SECURE=false`。正式 HTTPS 部署必须设置：
+本地通过 HTTP 调试时保留默认值。正式 HTTPS 部署必须设置：
 
 ```powershell
 $env:APP_COOKIE_SECURE="true"
+$env:APP_REQUIRE_HTTPS="true"
+$env:APP_FORWARD_HEADERS_STRATEGY="framework"
 ```
 
 ## 主要 API
@@ -185,8 +189,7 @@ QAR/
     │   ├── repo/         # 数据访问层
     │   ├── security/     # 认证、CSRF、审计过滤器
     │   ├── service/      # 业务与文件加密服务
-    │   ├── startup/      # 初始数据与迁移任务
-    │   └── transport/    # 应用层传输加密
+    │   └── startup/      # 初始数据与迁移任务
     ├── src/main/resources/
     │   ├── application.properties
     │   ├── person_seed.csv
@@ -210,7 +213,7 @@ $env:TEST_DB_PASSWORD="你的测试数据库密码"
 - `Access denied for user`：检查 `APP_DB_USERNAME`、`APP_DB_PASSWORD` 和 MySQL 授权范围。
 - `Communications link failure`：确认 MySQL 服务已启动且端口正确。
 - 管理员登录后无权限：确认使用的是数据库中的管理员账号，并检查其角色是否为 `ROLE_ADMIN`。
-- 页面提示“TLS 传输加密未建立”：本地地址本身仍是 HTTP；刷新握手只能恢复应用层加密。正式环境需要另外配置 HTTPS。
+- 页面提示“必须启用 HTTPS”：使用受信任证书访问正式域名；只有 `localhost` 和回环地址允许 HTTP 调试。
 - 中文乱码：确认 MySQL 数据库使用 `utf8mb4`，并保留 JDBC URL 中的 UTF-8 参数。
 - 端口 `8101` 被占用：停止旧进程后重新启动应用。
 

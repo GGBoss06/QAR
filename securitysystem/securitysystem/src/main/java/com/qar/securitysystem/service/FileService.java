@@ -4,7 +4,6 @@ import com.qar.securitysystem.abe.AccessPurpose;
 import com.qar.securitysystem.abe.AttributeAuthorityService;
 import com.qar.securitysystem.abe.FileKeyEnvelopeService;
 import com.qar.securitysystem.abe.lattice.LatticeUserSecretKeyService;
-import com.qar.securitysystem.dto.EncryptedFileResponse;
 import com.qar.securitysystem.dto.EncryptedFileUploadRequest;
 import com.qar.securitysystem.dto.FileRecordResponse;
 import com.qar.securitysystem.config.FileStorageProperties;
@@ -40,14 +39,12 @@ public class FileService {
     private static final int GCM_IV_LENGTH = 12;
 
     private final FileRecordRepository fileRecordRepository;
-    private final ServerKeyPairService serverKeyPairService;
     private final FileKeyEnvelopeService fileKeyEnvelopeService;
     private final AttributeAuthorityService attributeAuthorityService;
     private final FileStorageProperties fileStorageProperties;
 
-    public FileService(FileRecordRepository fileRecordRepository, ServerKeyPairService serverKeyPairService, FileKeyEnvelopeService fileKeyEnvelopeService, AttributeAuthorityService attributeAuthorityService, FileStorageProperties fileStorageProperties) {
+    public FileService(FileRecordRepository fileRecordRepository, FileKeyEnvelopeService fileKeyEnvelopeService, AttributeAuthorityService attributeAuthorityService, FileStorageProperties fileStorageProperties) {
         this.fileRecordRepository = fileRecordRepository;
-        this.serverKeyPairService = serverKeyPairService;
         this.fileKeyEnvelopeService = fileKeyEnvelopeService;
         this.attributeAuthorityService = attributeAuthorityService;
         this.fileStorageProperties = fileStorageProperties;
@@ -220,44 +217,6 @@ public class FileService {
 
     public byte[] decryptForUser(FileRecordEntity record, UserEntity user, AccessPurpose purpose) {
         return decryptStoredData(record, user, purpose);
-    }
-
-    public EncryptedFileResponse getEncryptedDataForUser(FileRecordEntity record, UserEntity user) {
-        return getEncryptedDataForUser(record, user, AccessPurpose.USER_DOWNLOAD);
-    }
-
-    public EncryptedFileResponse getEncryptedDataForUser(FileRecordEntity record, UserEntity user, AccessPurpose purpose) {
-        if (user.getPublicKey() == null || user.getPublicKey().isBlank()) {
-            throw new IllegalStateException("user_public_key_missing");
-        }
-
-        byte[] plainData = decryptStoredData(record, user, purpose);
-        try {
-            javax.crypto.SecretKey aesKey = AesGcmUtil.generateKey();
-            byte[] iv = AesGcmUtil.newIv();
-            byte[] encryptedData = AesGcmUtil.encrypt(aesKey, iv, plainData, buildFileAad(record.getPolicy()));
-
-            EncryptedFileResponse resp = new EncryptedFileResponse();
-            resp.setEncryptedData(Base64.getEncoder().encodeToString(joinIvAndCiphertext(iv, encryptedData)));
-            resp.setWrappedKey(serverKeyPairService.wrapKeyForPublicKey(aesKey.getEncoded(), user.getPublicKey()));
-            resp.setOriginalName(record.getOriginalName());
-            resp.setContentType(record.getContentType());
-            resp.setPolicy(record.getPolicy());
-            return resp;
-        } catch (Exception e) {
-            throw new RuntimeException("failed_to_encrypt_for_transmission", e);
-        }
-    }
-
-    public EncryptedFileResponse getEncryptedData(FileRecordEntity record) {
-        // This is the old method, we should probably not use it if we want transmission encryption
-        EncryptedFileResponse resp = new EncryptedFileResponse();
-        resp.setEncryptedData(record.getEncryptedData());
-        resp.setWrappedKey(record.getWrappedKey());
-        resp.setOriginalName(record.getOriginalName());
-        resp.setContentType(record.getContentType());
-        resp.setPolicy(record.getPolicy());
-        return resp;
     }
 
     @Transactional

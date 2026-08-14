@@ -14,8 +14,6 @@ import com.qar.securitysystem.repo.PersonRecordRepository;
 import com.qar.securitysystem.repo.UserRepository;
 import com.qar.securitysystem.service.FileService;
 import com.qar.securitysystem.service.FlightXlsxService;
-import com.qar.securitysystem.service.ServerKeyPairService;
-import com.qar.securitysystem.util.AesGcmUtil;
 import com.qar.securitysystem.util.IdUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -48,9 +46,6 @@ class SecuritysystemApplicationTests {
 
 	@Autowired
 	private UserRepository userRepository;
-
-	@Autowired
-	private ServerKeyPairService serverKeyPairService;
 
 	@Test
 	void contextLoads() {
@@ -171,32 +166,6 @@ class SecuritysystemApplicationTests {
 	}
 
 	@Test
-	void legacyRsaWrappedFileRemainsReadable() {
-		String personId = ensurePerson("legacy-user-001", "兼容用户");
-		byte[] payload = "legacy-compatible".getBytes();
-		javax.crypto.SecretKey aesKey = AesGcmUtil.generateKey();
-		byte[] iv = AesGcmUtil.newIv();
-		byte[] ciphertext = AesGcmUtil.encrypt(aesKey, iv, payload, "personNo:legacy-user-001".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-		FileRecordEntity record = new FileRecordEntity();
-		record.setId(IdUtil.newId());
-		record.setOwnerId(personId);
-		record.setOriginalName("legacy.txt");
-		record.setContentType("text/plain");
-		record.setSizeBytes(payload.length);
-		record.setPolicy("personNo:legacy-user-001");
-		record.setWrappedKey(serverKeyPairService.wrapKey(aesKey.getEncoded()));
-		record.setEncryptedData(Base64.getEncoder().encodeToString(joinIvAndCiphertext(iv, ciphertext)));
-		record.setCreatedAt(Instant.now());
-		fileRecordRepository.save(record);
-
-		UserEntity user = buildUser("legacy-viewer", personId, UserRole.USER);
-		byte[] decrypted = fileService.decryptForUser(record, user, AccessPurpose.USER_DOWNLOAD);
-
-		Assertions.assertArrayEquals(payload, decrypted);
-	}
-
-	@Test
 	void rewrapPolicyKeepsEncryptedPayloadAndOnlyRotatesWrappedKey() {
 		String oldPersonId = ensurePerson("rewrap-old-001", "原策略用户");
 		String newPersonId = ensurePerson("rewrap-new-001", "新策略用户");
@@ -265,13 +234,6 @@ class SecuritysystemApplicationTests {
 		user.setAccessEnabled(true);
 		user.setCreatedAt(Instant.now());
 		return userRepository.save(user);
-	}
-
-	private static byte[] joinIvAndCiphertext(byte[] iv, byte[] ciphertext) {
-		byte[] combined = new byte[iv.length + ciphertext.length];
-		System.arraycopy(iv, 0, combined, 0, iv.length);
-		System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
-		return combined;
 	}
 
 }
