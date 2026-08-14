@@ -36,3 +36,6 @@ build/
 data/db/
 *.mv.db
 *.trace.db
+data/crypto/
+data/uploads/
+.dbg/

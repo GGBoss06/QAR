@@ -74,15 +74,6 @@ function buildPolicyClause(key, value) {
   return safe ? `${key}:${safe}` : ""
 }
 
-function envelopeTypeLabel(wrappedKey) {
-  const value = wrappedKey || ""
-  if (value.startsWith("LABE_LATTICE_BC:")) return "格基L-ABE"
-  if (value.startsWith("LABE_PROTO_BC:")) return "原型LABE"
-  if (value.startsWith("RSA_WRAP_BC:")) return "RSA兼容"
-  if (!value) return "明文/空"
-  return "其他"
-}
-
 function uniqueClauses(clauses) {
   const out = []
   for (const clause of clauses) {
@@ -283,9 +274,9 @@ function updatePolicyNaturalLanguage(policy) {
     department: "当前是部门共享策略，系统会将你选择的部门、人员分类、职责域和密级组合成访问条件。",
     fleet: "当前是机队共享策略，系统会按机队范围和人员分类控制访问。",
     safety: "当前是安全审查策略，系统会将安全监管相关职责域和人员分类组合成审查范围。",
-    admin: "当前是仅管理员策略，只有管理员可解封装AES密钥。"
+    admin: "当前是仅管理员策略，只有管理员可以访问。"
   }
-  box.textContent = (templateText[uploadPolicyState.template] || "当前使用属性策略控制访问。") + (policy ? ` 当前表达式：${policy}` : "")
+  box.textContent = templateText[uploadPolicyState.template] || "系统将按所选范围控制访问。"
 }
 
 function updatePolicyTreePreview(policy) {
@@ -408,17 +399,6 @@ function renderChipList(containerId, items) {
   }
 }
 
-function renderMyAttributes(me) {
-  renderChipList("me-attributes", me && me.attributes ? me.attributes : [])
-}
-
-function updateLabeStatus() {
-  const statusEl = document.getElementById("labe-status")
-  if (!statusEl) return
-  statusEl.textContent = "LABE_LATTICE_BC主链路已启用"
-  statusEl.className = "badge ok"
-}
-
 function setPolicyTemplate(template) {
   uploadPolicyState.template = template || "personal"
   document.querySelectorAll(".policy-template-btn").forEach(btn => {
@@ -454,31 +434,37 @@ async function bindPolicyBuilder(me) {
 
 async function checkTransportCrypto() {
   const statusEl = document.getElementById("crypto-status")
-  if (!statusEl) return false
-  
-  statusEl.textContent = "检查中..."
-  statusEl.className = "badge"
+  if (statusEl) {
+    statusEl.textContent = "检查中..."
+    statusEl.className = "badge"
+  }
   
   try {
     await TransportCrypto.ensureSession()
     if (!window.crypto || !window.crypto.subtle) {
-      statusEl.textContent = "✓ 明文传输模式"
-      statusEl.className = "badge ok"
+      if (statusEl) {
+        statusEl.textContent = "✓ 明文传输模式"
+        statusEl.className = "badge ok"
+      }
     } else {
-      statusEl.textContent = "✓ TLS传输加密已建立"
-      statusEl.className = "badge ok"
+      if (statusEl) {
+        statusEl.textContent = "✓ TLS传输加密已建立"
+        statusEl.className = "badge ok"
+      }
     }
     return true
   } catch (e) {
     const msg = (e && e.message) || ""
-    if (msg === "transport_handshake_timeout") {
-      statusEl.textContent = "✗ 握手超时"
-    } else if (msg.includes("未登录") || msg.includes("会话")) {
-      statusEl.textContent = "✗ 会话失效"
-    } else {
-      statusEl.textContent = "✗ TLS传输加密不可用"
+    if (statusEl) {
+      if (msg === "transport_handshake_timeout") {
+        statusEl.textContent = "✗ 握手超时"
+      } else if (msg.includes("未登录") || msg.includes("会话")) {
+        statusEl.textContent = "✗ 会话失效"
+      } else {
+        statusEl.textContent = "✗ TLS传输加密不可用"
+      }
+      statusEl.className = "badge danger"
     }
-    statusEl.className = "badge danger"
     return false
   }
 }
@@ -490,18 +476,16 @@ async function refreshList() {
   document.getElementById("empty").style.display = rows.length ? "none" : "block"
   for (const r of rows) {
     const tr = document.createElement("tr")
-    tr.innerHTML = "<td></td><td></td><td></td><td></td><td></td><td class='actions'></td>"
+    tr.innerHTML = "<td></td><td></td><td></td><td class='actions'></td>"
     tr.children[0].textContent = r.originalName
-    tr.children[1].textContent = envelopeTypeLabel(r.wrappedKey)
-    tr.children[2].textContent = fmtBytes(r.sizeBytes)
-    tr.children[3].textContent = r.policy || "-"
-    tr.children[4].textContent = (r.createdAt || "").replace("T", " ").replace("Z", "")
+    tr.children[1].textContent = fmtBytes(r.sizeBytes)
+    tr.children[2].textContent = (r.createdAt || "").replace("T", " ").replace("Z", "")
     
     const downloadBtn = document.createElement("button")
     downloadBtn.className = "btn"
     downloadBtn.textContent = "下载"
     downloadBtn.onclick = () => onDownload(r.id)
-    tr.children[5].appendChild(downloadBtn)
+    tr.children[3].appendChild(downloadBtn)
     
     tbody.appendChild(tr)
   }
@@ -661,9 +645,6 @@ async function onLogout() {
 async function main() {
   const me = await ensureMe()
   if (!me) return
-  renderMyAttributes(me)
-  updateLabeStatus()
-  
   const mePill = document.getElementById("me-pill")
   const dropdownMenu = mePill ? mePill.querySelector(".dropdown-menu") : null
   

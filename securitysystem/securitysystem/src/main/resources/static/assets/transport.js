@@ -98,9 +98,16 @@
   }
 
   async function fetchEncrypted(path, opts, allowRetry = true) {
+    const requestedMethod = (opts && opts.method ? opts.method : "GET").toUpperCase()
+    if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(requestedMethod)) {
+      if (!window.__csrf || !window.__csrf.token) await initCsrf()
+    }
     if (!window.crypto || !window.crypto.subtle) {
-      const method = (opts && opts.method ? opts.method : "GET").toUpperCase()
+      const method = requestedMethod
       const headers = Object.assign({ "Accept": "application/json" }, (opts && opts.headers) ? opts.headers : {})
+      if (window.__csrf && window.__csrf.token && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+        headers[window.__csrf.headerName || "X-XSRF-TOKEN"] = window.__csrf.token
+      }
       let body = opts && opts.body ? opts.body : null
       if (body != null && typeof body !== "string") body = JSON.stringify(body)
       const init = Object.assign({}, opts || {}, { credentials: "include", method, headers })
@@ -124,8 +131,11 @@
     }
 
     await ensureSession()
-    const method = (opts && opts.method ? opts.method : "GET").toUpperCase()
+    const method = requestedMethod
     const headers = Object.assign({ "Accept": "application/json" }, (opts && opts.headers) ? opts.headers : {})
+    if (window.__csrf && window.__csrf.token && !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+      headers[window.__csrf.headerName || "X-XSRF-TOKEN"] = window.__csrf.token
+    }
     headers["X-QAR-Encrypted"] = "1"
     headers["X-QAR-Transport"] = state.protocol
 

@@ -8,7 +8,7 @@ public class FileRecordResponse {
     private String contentType;
     private long sizeBytes;
     private String policy;
-    private String wrappedKey;
+    private String protectionStatus;
     private String createdAt;
 
     public String getId() {
@@ -67,12 +67,12 @@ public class FileRecordResponse {
         this.policy = policy;
     }
 
-    public String getWrappedKey() {
-        return wrappedKey;
+    public String getProtectionStatus() {
+        return protectionStatus;
     }
 
-    public void setWrappedKey(String wrappedKey) {
-        this.wrappedKey = wrappedKey;
+    public void setProtectionStatus(String protectionStatus) {
+        this.protectionStatus = protectionStatus;
     }
 
     public String getCreatedAt() {

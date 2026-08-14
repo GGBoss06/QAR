@@ -28,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -63,15 +65,34 @@ public class AdminService {
     }
 
     public List<UserResponse> listUsers() {
-        return userRepository.findAll().stream().map(this::toUserResponse).toList();
+        return userRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toUserResponse).toList();
     }
 
     public List<FileRecordResponse> listAllFiles() {
-        return fileRecordRepository.findAll().stream().map(this::toFileResponse).toList();
+        List<FileRecordEntity> files = fileRecordRepository.findAllByOrderByCreatedAtDesc();
+        Set<String> ownerIds = files.stream()
+                .map(FileRecordEntity::getOwnerId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+
+        Map<String, UserEntity> usersById = new HashMap<>();
+        userRepository.findAllById(ownerIds).forEach(user -> usersById.put(user.getId(), user));
+
+        Set<String> personIds = new java.util.HashSet<>(ownerIds);
+        usersById.values().stream()
+                .map(UserEntity::getPersonId)
+                .filter(id -> id != null && !id.isBlank())
+                .forEach(personIds::add);
+        Map<String, PersonRecordEntity> personsById = new HashMap<>();
+        personRecordRepository.findAllById(personIds).forEach(person -> personsById.put(person.getId(), person));
+
+        return files.stream()
+                .map(file -> toFileResponse(file, usersById, personsById))
+                .toList();
     }
 
     public List<FileRecordEntity> listAllFileEntities() {
-        return fileRecordRepository.findAll();
+        return fileRecordRepository.findAllByOrderByCreatedAtDesc();
     }
 
     public List<FeedbackResponse> listAllFeedback() {
@@ -130,6 +151,7 @@ public class AdminService {
         u.setAccessEnabled(true);
         userRepository.save(u);
         latticeUserSecretKeyService.issueForUser(u, "account_approved");
+        fileService.refreshAllPolicyRecipients();
 
         e.setStatus(AccountRequestStatus.APPROVED);
         e.setReviewedAt(Instant.now());
@@ -157,7 +179,7 @@ public class AdminService {
     }
 
     public List<PersonRecordEntity> listAllPersons() {
-        return personRecordRepository.findAll();
+        return personRecordRepository.findAllByOrderByPersonNoAsc();
     }
 
     public PersonRecordEntity createPerson(PersonRecordEntity person) {
@@ -191,6 +213,7 @@ public class AdminService {
         if (!beforeAttributes.equals(afterAttributes)) {
             userRepository.findByPersonId(saved.getId())
                     .ifPresent(user -> latticeUserSecretKeyService.issueForUser(user, "person_attributes_updated"));
+            fileService.refreshAllPolicyRecipients();
         }
         return saved;
     }
@@ -217,7 +240,9 @@ public class AdminService {
     public LatticeUserSecretKeyService.UserSecretBundle issueLatticeBundleForPerson(String personId, String reason) {
         PersonRecordEntity person = personRecordRepository.findById(personId).orElseThrow(() -> new IllegalArgumentException("not_found"));
         UserEntity user = userRepository.findByPersonId(person.getId()).orElseThrow(() -> new IllegalArgumentException("account_not_ready"));
-        return latticeUserSecretKeyService.issueForUser(user, reason == null || reason.isBlank() ? "admin_manual_issue" : reason.trim());
+        LatticeUserSecretKeyService.UserSecretBundle bundle = latticeUserSecretKeyService.issueForUser(user, reason == null || reason.isBlank() ? "admin_manual_issue" : reason.trim());
+        fileService.refreshAllPolicyRecipients();
+        return bundle;
     }
 
     @Transactional
@@ -232,6 +257,7 @@ public class AdminService {
         user.setAccessRevokedReason(normalizeAccessReason(reason, "admin_access_frozen"));
         userRepository.save(user);
         latticeUserSecretKeyService.revokeActiveBundle(user.getId(), user.getAccessRevokedReason());
+        fileService.refreshAllPolicyRecipients();
     }
 
     @Transactional
@@ -242,7 +268,9 @@ public class AdminService {
         user.setAccessRevokedAt(null);
         user.setAccessRevokedReason(null);
         userRepository.save(user);
-        return latticeUserSecretKeyService.issueForUser(user, normalizeAccessReason(reason, "admin_access_restored"));
+        LatticeUserSecretKeyService.UserSecretBundle bundle = latticeUserSecretKeyService.issueForUser(user, normalizeAccessReason(reason, "admin_access_restored"));
+        fileService.refreshAllPolicyRecipients();
+        return bundle;
     }
 
     private UserResponse toUserResponse(UserEntity u) {
@@ -254,16 +282,18 @@ public class AdminService {
         return resp;
     }
 
-    private FileRecordResponse toFileResponse(FileRecordEntity r) {
+    private FileRecordResponse toFileResponse(FileRecordEntity r,
+                                              Map<String, UserEntity> usersById,
+                                              Map<String, PersonRecordEntity> personsById) {
         FileRecordResponse resp = new FileRecordResponse();
         resp.setId(r.getId());
         resp.setOwnerId(r.getOwnerId());
-        PersonRecordEntity pr = null;
-        UserEntity ownerUser = userRepository.findById(r.getOwnerId()).orElse(null);
+        UserEntity ownerUser = usersById.get(r.getOwnerId());
+        PersonRecordEntity pr;
         if (ownerUser != null && ownerUser.getPersonId() != null) {
-            pr = personRecordRepository.findById(ownerUser.getPersonId()).orElse(null);
+            pr = personsById.get(ownerUser.getPersonId());
         } else {
-            pr = personRecordRepository.findById(r.getOwnerId()).orElse(null);
+            pr = personsById.get(r.getOwnerId());
         }
         if (pr != null) {
             resp.setOwnerLabel(pr.getPersonNo() + " " + pr.getFullName());
@@ -272,7 +302,7 @@ public class AdminService {
         resp.setContentType(r.getContentType());
         resp.setSizeBytes(r.getSizeBytes());
         resp.setPolicy(r.getPolicy());
-        resp.setWrappedKey(r.getWrappedKey());
+        resp.setProtectionStatus(FileProtectionStatus.fromWrappedKey(r.getWrappedKey()));
         resp.setCreatedAt(r.getCreatedAt() == null ? null : r.getCreatedAt().toString());
         return resp;
     }

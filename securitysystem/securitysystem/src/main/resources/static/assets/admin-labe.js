@@ -48,16 +48,8 @@ async function refreshOverview() {
   }
   setText("ov-total-files", ov.totalFiles || 0)
   setText("ov-lattice-files", ov.latticeFiles || 0)
-  setText("ov-lattice-mini", ov.latticeFiles || 0)
   setText("ov-authorities", ov.authorityCount || 0)
   setText("ov-bundles", ov.userSecretBundles || 0)
-  setText("ov-prototype-files", ov.prototypeFiles || 0)
-  setText("ov-legacy-files", ov.legacyFiles || 0)
-  setText("ov-persons", ov.totalPersons || 0)
-  const summary = document.getElementById("labe-summary")
-  if (summary) {
-    summary.textContent = `当前共有${ov.totalFiles || 0}个文件，其中${ov.latticeFiles || 0}个已切换到LABE_LATTICE_BC新格式，${ov.userSecretBundles || 0}个用户属性密钥材料已生成。`
-  }
 }
 
 async function refreshAuthorities() {
@@ -66,11 +58,9 @@ async function refreshAuthorities() {
   tbody.innerHTML = ""
   for (const row of rows) {
     const tr = document.createElement("tr")
-    tr.innerHTML = "<td></td><td></td><td></td><td></td>"
+    tr.innerHTML = "<td></td><td></td>"
     tr.children[0].textContent = row.authorityId
-    tr.children[1].textContent = row.algorithm
-    tr.children[2].textContent = (row.attributeScopes || []).join(", ")
-    tr.children[3].textContent = row.publicKeyFingerprint || "-"
+    tr.children[1].textContent = (row.attributeScopes || []).join(", ")
     tbody.appendChild(tr)
   }
 }
@@ -112,18 +102,25 @@ function renderSelectedPerson() {
   if (!row) {
     summary.textContent = "请选择左侧人员查看详情。"
     renderChipList("labe-person-attributes", [])
-    renderChipList("labe-person-authorities", [])
     return
   }
-  summary.innerHTML = `
-    <div><strong>${row.fullName || "-"}</strong>（${row.personNo || "-"}）</div>
-    <div>部门：${row.department || "-"}，航司：${row.airline || "-"}</div>
-    <div>职责域：${row.dutyDomain || "-"}，机队：${row.fleetGroup || "-"}</div>
-    <div>账号状态：${row.accountReady ? "已建立用户账号" : "尚未建立用户账号"}</div>
-    <div>发钥状态：${row.secretBundleReady ? "属性密钥材料已存在" : "属性密钥材料尚未生成"}</div>
-  `
+  summary.replaceChildren()
+  const appendLine = (...parts) => {
+    const line = document.createElement("div")
+    for (const part of parts) {
+      if (part instanceof Node) line.appendChild(part)
+      else line.appendChild(document.createTextNode(String(part)))
+    }
+    summary.appendChild(line)
+  }
+  const name = document.createElement("strong")
+  name.textContent = row.fullName || "-"
+  appendLine(name, `（${row.personNo || "-"}）`)
+  appendLine(`部门：${row.department || "-"}，航司：${row.airline || "-"}`)
+  appendLine(`职责域：${row.dutyDomain || "-"}，机队：${row.fleetGroup || "-"}`)
+  appendLine(`账号状态：${row.accountReady ? "已建立用户账号" : "尚未建立用户账号"}`)
+  appendLine(`授权状态：${row.secretBundleReady ? "已授权" : "尚未授权"}`)
   renderChipList("labe-person-attributes", row.attributes || [])
-  renderChipList("labe-person-authorities", row.authorities || [])
 }
 
 async function onLogout() {

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qar.securitysystem.dto.QarTableRowRequest;
 import com.qar.securitysystem.dto.QarTableRowResponse;
 import com.qar.securitysystem.dto.QarXlsxPreviewResponse;
+import com.qar.securitysystem.config.FileStorageProperties;
 import com.qar.securitysystem.model.QarTableRowEntity;
 import com.qar.securitysystem.repo.QarTableRowRepository;
 import com.qar.securitysystem.util.IdUtil;
@@ -17,6 +18,8 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Sort;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -33,14 +36,21 @@ import java.util.Base64;
 public class QarTableService {
     private final QarTableRowRepository repo;
     private final ObjectMapper objectMapper;
+    private final FileStorageProperties fileStorageProperties;
     private final DataFormatter formatter = new DataFormatter(Locale.CHINA);
 
-    public QarTableService(QarTableRowRepository repo, ObjectMapper objectMapper) {
+    public QarTableService(QarTableRowRepository repo, ObjectMapper objectMapper, FileStorageProperties fileStorageProperties) {
         this.repo = repo;
         this.objectMapper = objectMapper;
+        this.fileStorageProperties = fileStorageProperties;
     }
 
     public List<QarTableRowResponse> list(String sortBy, String sortDir) {
+        String normalizedSort = normalizeDatabaseSortProperty(sortBy);
+        if (normalizedSort != null) {
+            Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
+            return repo.findAll(Sort.by(direction, normalizedSort)).stream().map(this::toResponse).toList();
+        }
         List<QarTableRowEntity> all = repo.findAll();
         Comparator<QarTableRowEntity> cmp = buildComparator(sortBy);
         if ("desc".equalsIgnoreCase(sortDir)) {
@@ -83,17 +93,10 @@ public class QarTableService {
         return resp;
     }
 
+    @Transactional
     public int importXlsx(MultipartFile file) {
         ParsedXlsx parsed = parseXlsx(file, Integer.MAX_VALUE);
-        Instant now = Instant.now();
-        for (Map<String, Object> row : parsed.rows) {
-            QarTableRowEntity e = new QarTableRowEntity();
-            e.setId(IdUtil.newId());
-            e.setCreatedAt(now);
-            e.setDataJson(writeJson(row));
-            repo.save(e);
-        }
-        return parsed.rows.size();
+        return persistRows(parsed.rows);
     }
 
     public QarXlsxPreviewResponse previewXlsxBase64(String dataBase64, int maxRows) {
@@ -104,22 +107,18 @@ public class QarTableService {
         return resp;
     }
 
+    @Transactional
     public int importXlsxBase64(String dataBase64) {
         ParsedXlsx parsed = parseXlsxBytes(dataBase64, Integer.MAX_VALUE);
-        Instant now = Instant.now();
-        for (Map<String, Object> row : parsed.rows) {
-            QarTableRowEntity e = new QarTableRowEntity();
-            e.setId(IdUtil.newId());
-            e.setCreatedAt(now);
-            e.setDataJson(writeJson(row));
-            repo.save(e);
-        }
-        return parsed.rows.size();
+        return persistRows(parsed.rows);
     }
 
     private ParsedXlsx parseXlsx(MultipartFile file, int maxRows) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("file_required");
+        }
+        if (file.getSize() > fileStorageProperties.getMaxBytes()) {
+            throw new IllegalArgumentException("file_too_large");
         }
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             return parseWorkbook(wb, maxRows);
@@ -133,6 +132,9 @@ public class QarTableService {
     private ParsedXlsx parseXlsxBytes(String dataBase64, int maxRows) {
         if (dataBase64 == null || dataBase64.isBlank()) {
             throw new IllegalArgumentException("file_required");
+        }
+        if (encodedPayloadExceedsLimit(dataBase64.trim())) {
+            throw new IllegalArgumentException("file_too_large");
         }
         try {
             byte[] bytes = Base64.getDecoder().decode(dataBase64.trim());
@@ -251,6 +253,24 @@ public class QarTableService {
         }
     }
 
+    private int persistRows(List<Map<String, Object>> rows) {
+        Instant now = Instant.now();
+        List<QarTableRowEntity> entities = rows.stream().map(row -> {
+            QarTableRowEntity entity = new QarTableRowEntity();
+            entity.setId(IdUtil.newId());
+            entity.setCreatedAt(now);
+            entity.setDataJson(writeJson(row));
+            return entity;
+        }).toList();
+        repo.saveAll(entities);
+        return entities.size();
+    }
+
+    private boolean encodedPayloadExceedsLimit(String encodedData) {
+        long maxEncodedLength = ((fileStorageProperties.getMaxBytes() + 2L) / 3L) * 4L;
+        return encodedData.length() > maxEncodedLength;
+    }
+
     private Comparator<QarTableRowEntity> buildComparator(String sortBy) {
         String s = sortBy == null ? "" : sortBy.trim();
         if (s.isBlank() || "createdAt".equalsIgnoreCase(s)) {
@@ -272,6 +292,20 @@ public class QarTableService {
             String sb = vb == null ? "" : String.valueOf(vb);
             return sa.compareTo(sb);
         };
+    }
+
+    private static String normalizeDatabaseSortProperty(String sortBy) {
+        String value = sortBy == null ? "" : sortBy.trim();
+        if (value.isBlank() || "createdAt".equalsIgnoreCase(value)) {
+            return "createdAt";
+        }
+        if ("updatedAt".equalsIgnoreCase(value)) {
+            return "updatedAt";
+        }
+        if ("id".equalsIgnoreCase(value)) {
+            return "id";
+        }
+        return null;
     }
 
     private static class ParsedXlsx {

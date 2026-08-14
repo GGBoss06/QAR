@@ -27,7 +27,7 @@ public class FeedbackEntity {
     private String subject;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String message;
 
     @Column(length = 140)
@@ -41,6 +41,7 @@ public class FeedbackEntity {
     private FeedbackStatus status;
 
     @Lob
+    @Column(columnDefinition = "LONGTEXT")
     private String adminReply;
 
     private Instant createdAt;

@@ -96,17 +96,8 @@
           </div>
 
           <div class="container">
-            <!-- 概览卡片 -->
+            <!-- 业务概览 -->
             <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 24px;">
-              <div class="card stats-card">
-                <div class="card-h">
-                  <div class="h2">安全状态</div>
-                </div>
-                <div class="card-b">
-                  <div id="crypto-status" class="badge">检查中...</div>
-                  <div class="stats-desc">数据传输加密</div>
-                </div>
-              </div>
               <div class="card stats-card">
                 <div class="card-h">
                   <div class="h2">已上传文件</div>
@@ -125,22 +116,13 @@
                   <div class="stats-desc">可下载数据</div>
                 </div>
               </div>
-              <div class="card stats-card">
-                <div class="card-h">
-                  <div class="h2">L-ABE主链路</div>
-                </div>
-                <div class="card-b">
-                  <div id="labe-status" class="badge">检查中...</div>
-                  <div class="stats-desc">格基属性密钥封装状态</div>
-                </div>
-              </div>
             </div>
 
             <div class="grid" id="grid" style="gap:24px">
               <div class="card" id="upload-card">
                 <div class="card-h">
                   <div class="h2">文件上传</div>
-                  <div class="muted">文件内容使用AES-GCM加密，文件AES密钥使用L-ABE封装并按属性策略控制访问</div>
+                  <div class="muted">选择文件并设置允许访问的人员范围</div>
                 </div>
                 <div class="card-b col">
                   <div class="col">
@@ -196,19 +178,8 @@
                       </div>
                     </div>
                     <div class="col">
-                      <div class="label">策略预览</div>
-                      <input class="input" id="policy-preview" readonly />
-                      <div class="muted">使用模板按钮自动生成策略，上传时后台按该策略控制AES密钥访问。</div>
-                    </div>
-                    <div class="grid" style="grid-template-columns: 1.2fr 1fr; gap: 12px;">
-                      <div class="col">
-                        <div class="label">策略自然语言解释</div>
-                        <div class="info-panel" id="policy-natural-language">系统将根据你选择的模板和属性范围自动解释访问对象。</div>
-                      </div>
-                      <div class="col">
-                        <div class="label">策略树预览</div>
-                        <pre class="tree-preview" id="policy-tree-preview">ROOT</pre>
-                      </div>
+                      <div class="label">访问范围说明</div>
+                      <div class="info-panel" id="policy-natural-language">系统将根据你选择的模板和范围控制访问对象。</div>
                     </div>
                   </div>
                   <div class="col">
@@ -236,9 +207,7 @@
                       <thead>
                         <tr>
                           <th>文件名</th>
-                          <th>封装</th>
                           <th>大小</th>
-                          <th>策略</th>
                           <th>上传时间</th>
                           <th class="actions">操作</th>
                         </tr>
@@ -247,32 +216,6 @@
                     </table>
                   </div>
                   <div class="muted" id="empty" style="display:none;margin-top:10px">暂无数据</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid" style="gap:24px;margin-top:24px;grid-template-columns:1fr 1fr">
-              <div class="card">
-                <div class="card-h">
-                  <div class="h2">我的属性集合</div>
-                  <div class="muted">这些属性将决定你是否满足L-ABE访问策略</div>
-                </div>
-                <div class="card-b">
-                  <div class="chip-list" id="me-attributes"></div>
-                </div>
-              </div>
-              <div class="card">
-                <div class="card-h">
-                  <div class="h2">当前封装说明</div>
-                  <div class="muted">新上传文件默认走`LABE_LATTICE_BC:`封装</div>
-                </div>
-                <div class="card-b">
-                  <div class="info-panel">
-                    <div><strong>内容层：</strong>AES-GCM</div>
-                    <div><strong>密钥层：</strong>多权威格基CP-ABE研究原型</div>
-                    <div><strong>策略层：</strong>交互式模板映射为AND/OR属性树</div>
-                    <div><strong>兼容层：</strong>旧`LABE_PROTO_BC:`和`RSA`历史数据可继续读取</div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -286,7 +229,7 @@
       </div>
     </div>
 
-    <script src="/assets/common.js"></script>
+    <script src="/assets/common.js?v=20260814-csrf"></script>
     <script src="/assets/transport.js"></script>
     <script src="/assets/workbench.js"></script>
   </body>

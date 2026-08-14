@@ -20,6 +20,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,7 +41,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
-    private static final HttpClient DEBUG_HTTP = HttpClient.newHttpClient();
     private final AuthService authService;
     private final SessionService sessionService;
     private final AppSecurityProperties securityProperties;
@@ -60,11 +60,18 @@ public class AuthController {
         try {
             RegistrationResult result = authService.submitAccountRequest(req);
             AccountRequestResponse resp = toAccountRequestResponse(result.getEntity());
-            resp.setPrivateKey(result.getPrivateKey());
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(error(400, e.getMessage()));
         }
+    }
+
+    @GetMapping("/csrf")
+    public Map<String, String> csrf(CsrfToken token) {
+        return Map.of(
+                "token", token.getToken(),
+                "headerName", token.getHeaderName()
+        );
     }
 
     @PostMapping("/login")
@@ -230,35 +237,6 @@ public class AuthController {
     }
 
     private static void debugReport(String hypothesisId, String location, String msg, Map<String, Object> data) {
-        try {
-            Path envPath = Path.of(".dbg", "zhangsan-data-zero.env");
-            String url = "http://127.0.0.1:7777/event";
-            String sessionId = "zhangsan-data-zero";
-            if (Files.exists(envPath)) {
-                String env = Files.readString(envPath, StandardCharsets.UTF_8);
-                for (String line : env.split("\\R")) {
-                    if (line.startsWith("DEBUG_SERVER_URL=")) {
-                        url = line.substring("DEBUG_SERVER_URL=".length()).trim();
-                    } else if (line.startsWith("DEBUG_SESSION_ID=")) {
-                        sessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
-                    }
-                }
-            }
-            String payload = new ObjectMapper().writeValueAsString(Map.of(
-                    "sessionId", sessionId,
-                    "runId", "pre-fix",
-                    "hypothesisId", hypothesisId,
-                    "location", location,
-                    "msg", msg,
-                    "data", data,
-                    "ts", System.currentTimeMillis()
-            ));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            DEBUG_HTTP.send(request, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception ignored) {
-        }
+        // Legacy debug forwarding is intentionally disabled.
     }
 }

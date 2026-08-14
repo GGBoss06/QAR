@@ -16,7 +16,7 @@ public class QarTableRowEntity {
     private String id;
 
     @Lob
-    @Column(name = "data_json", nullable = false)
+    @Column(name = "data_json", nullable = false, columnDefinition = "LONGTEXT")
     private String dataJson;
 
     @Column(name = "created_at", nullable = false)

@@ -1,6 +1,7 @@
 package com.qar.securitysystem;
 
 import com.qar.securitysystem.abe.AccessPurpose;
+import com.qar.securitysystem.abe.lattice.LatticeAbeService;
 import com.qar.securitysystem.dto.EncryptedFileUploadRequest;
 import com.qar.securitysystem.dto.FileRecordResponse;
 import com.qar.securitysystem.dto.FlightXlsxPreviewResponse;
@@ -10,11 +11,13 @@ import com.qar.securitysystem.model.UserEntity;
 import com.qar.securitysystem.model.UserRole;
 import com.qar.securitysystem.repo.FileRecordRepository;
 import com.qar.securitysystem.repo.PersonRecordRepository;
+import com.qar.securitysystem.repo.UserRepository;
 import com.qar.securitysystem.service.FileService;
 import com.qar.securitysystem.service.FlightXlsxService;
 import com.qar.securitysystem.service.ServerKeyPairService;
 import com.qar.securitysystem.util.AesGcmUtil;
 import com.qar.securitysystem.util.IdUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -32,6 +35,9 @@ class SecuritysystemApplicationTests {
 	private FileService fileService;
 
 	@Autowired
+	private ObjectMapper objectMapper;
+
+	@Autowired
 	private FlightXlsxService flightXlsxService;
 
 	@Autowired
@@ -39,6 +45,9 @@ class SecuritysystemApplicationTests {
 
 	@Autowired
 	private PersonRecordRepository personRecordRepository;
+
+	@Autowired
+	private UserRepository userRepository;
 
 	@Autowired
 	private ServerKeyPairService serverKeyPairService;
@@ -82,11 +91,12 @@ class SecuritysystemApplicationTests {
 	}
 
 	@Test
-	void labeEnvelopeAllowsMatchingUserAndUsesNewPrefix() {
+	void labeEnvelopeAllowsMatchingUserAndUsesNewPrefix() throws Exception {
 		String personId = ensurePerson("match-user-001", "匹配用户");
 
 		byte[] payload = "policy-protected-data".getBytes();
 		UserEntity owner = buildUser("owner-match", personId, UserRole.USER);
+		UserEntity viewer = buildUser("viewer-match", personId, UserRole.USER);
 
 		EncryptedFileUploadRequest req = new EncryptedFileUploadRequest();
 		req.setEncryptedData(Base64.getEncoder().encodeToString(payload));
@@ -96,10 +106,16 @@ class SecuritysystemApplicationTests {
 		req.setPolicy("personNo:match-user-001 AND role:user");
 
 		FileRecordResponse saved = fileService.storeEncrypted(owner, req);
-		Assertions.assertTrue(saved.getWrappedKey().startsWith("LABE_LATTICE_BC:"));
+		Assertions.assertEquals("ATTRIBUTE_CONTROLLED", saved.getProtectionStatus());
 
 		FileRecordEntity record = fileRecordRepository.findById(saved.getId()).orElseThrow();
-		UserEntity viewer = buildUser("viewer-match", personId, UserRole.USER);
+		Assertions.assertTrue(record.getWrappedKey().startsWith("LABE_LATTICE_BC:"));
+		String encodedEnvelope = record.getWrappedKey().substring("LABE_LATTICE_BC:".length());
+		LatticeAbeService.Envelope envelope = objectMapper.readValue(Base64.getDecoder().decode(encodedEnvelope), LatticeAbeService.Envelope.class);
+		Assertions.assertEquals(3, envelope.version);
+		Assertions.assertEquals("attribute-policy-user-bound-kyber768-v3", envelope.scheme);
+		Assertions.assertTrue(envelope.leaves.stream().allMatch(leaf -> leaf.keyId != null && !leaf.keyId.isBlank()));
+		Assertions.assertTrue(envelope.recipients.stream().anyMatch(recipient -> viewer.getId().equals(recipient.recipientId)));
 		byte[] decrypted = fileService.decryptForUser(record, viewer, AccessPurpose.USER_PAYLOAD);
 
 		Assertions.assertArrayEquals(payload, decrypted);
@@ -110,6 +126,7 @@ class SecuritysystemApplicationTests {
 		String personId = ensurePerson("dept-user-001", "部门用户");
 		byte[] payload = "department-shared".getBytes();
 		UserEntity owner = buildUser("dept-owner", personId, UserRole.USER);
+		UserEntity viewer = buildUser("dept-viewer", personId, UserRole.USER);
 
 		EncryptedFileUploadRequest req = new EncryptedFileUploadRequest();
 		req.setEncryptedData(Base64.getEncoder().encodeToString(payload));
@@ -119,10 +136,10 @@ class SecuritysystemApplicationTests {
 		req.setPolicy("(department:飞行一部 AND clearanceLevel:l1) OR role:admin");
 
 		FileRecordResponse saved = fileService.storeEncrypted(owner, req);
-		Assertions.assertTrue(saved.getWrappedKey().startsWith("LABE_LATTICE_BC:"));
+		Assertions.assertEquals("ATTRIBUTE_CONTROLLED", saved.getProtectionStatus());
 
 		FileRecordEntity record = fileRecordRepository.findById(saved.getId()).orElseThrow();
-		UserEntity viewer = buildUser("dept-viewer", personId, UserRole.USER);
+		Assertions.assertTrue(record.getWrappedKey().startsWith("LABE_LATTICE_BC:"));
 		byte[] decrypted = fileService.decryptForUser(record, viewer, AccessPurpose.USER_PAYLOAD);
 
 		Assertions.assertArrayEquals(payload, decrypted);
@@ -185,6 +202,8 @@ class SecuritysystemApplicationTests {
 		String newPersonId = ensurePerson("rewrap-new-001", "新策略用户");
 		byte[] payload = "rewrap-without-reencrypt".getBytes();
 		UserEntity owner = buildUser("rewrap-owner", oldPersonId, UserRole.USER);
+		UserEntity oldViewer = buildUser("rewrap-old-viewer", oldPersonId, UserRole.USER);
+		UserEntity newViewer = buildUser("rewrap-new-viewer", newPersonId, UserRole.USER);
 		String oldPolicy = "personNo:rewrap-old-001";
 		String newPolicy = "personNo:rewrap-new-001 OR role:admin";
 
@@ -207,9 +226,6 @@ class SecuritysystemApplicationTests {
 		Assertions.assertEquals(encryptedDataBefore, after.getEncryptedData());
 		Assertions.assertNotEquals(wrappedKeyBefore, after.getWrappedKey());
 		Assertions.assertEquals(oldPolicy, after.getAadPolicyBinding());
-
-		UserEntity oldViewer = buildUser("rewrap-old-viewer", oldPersonId, UserRole.USER);
-		UserEntity newViewer = buildUser("rewrap-new-viewer", newPersonId, UserRole.USER);
 
 		Assertions.assertFalse(fileService.canUserAccess(after, oldViewer));
 		Assertions.assertTrue(fileService.canUserAccess(after, newViewer));
@@ -239,14 +255,16 @@ class SecuritysystemApplicationTests {
 				});
 	}
 
-	private static UserEntity buildUser(String id, String personId, UserRole role) {
+	private UserEntity buildUser(String id, String personId, UserRole role) {
 		UserEntity user = new UserEntity();
 		user.setId(id);
 		user.setAccount(id);
 		user.setPersonId(personId);
 		user.setRole(role);
+		user.setPasswordHash("test-password-hash");
+		user.setAccessEnabled(true);
 		user.setCreatedAt(Instant.now());
-		return user;
+		return userRepository.save(user);
 	}
 
 	private static byte[] joinIvAndCiphertext(byte[] iv, byte[] ciphertext) {

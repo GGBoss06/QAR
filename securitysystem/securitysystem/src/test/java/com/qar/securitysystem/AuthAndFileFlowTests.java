@@ -46,7 +46,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "app.admin.username=admin",
                 "app.admin.password=CAUCqar",
                 "app.person.seedEnabled=false",
-                "spring.datasource.url=jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"
+                "spring.datasource.url=${TEST_DB_URL:jdbc:mysql://127.0.0.1:3306/qar_test?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}",
+                "spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver",
+                "spring.datasource.username=${TEST_DB_USERNAME:root}",
+                "spring.datasource.password=${TEST_DB_PASSWORD:}"
         }
 )
 public class AuthAndFileFlowTests {
@@ -59,6 +62,14 @@ public class AuthAndFileFlowTests {
     private PersonRecordRepository personRecordRepository;
 
     private MockMvc mvc;
+
+    @Test
+    void loginWithoutCsrfTokenIsRejected() throws Exception {
+        mvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"emailOrUsername\":\"admin\",\"password\":\"test\"}"))
+                .andExpect(status().isForbidden());
+    }
 
     @BeforeEach
     void setup() {
@@ -169,11 +180,15 @@ public class AuthAndFileFlowTests {
                         .content("{\"emailOrUsername\":\"admin\",\"fullName\":\"x\",\"idLast4\":\"0000\",\"password\":\"x\",\"passwordConfirm\":\"x\"}"))
                 .andExpect(status().isBadRequest());
 
-        mvc.perform(post("/api/auth/register")
+        String registrationJson = mvc.perform(post("/api/auth/register")
                         .with(csrf())
                         .contentType("application/json")
                         .content("{\"emailOrUsername\":\"user1\",\"fullName\":\"User One\",\"idLast4\":\"1234\",\"contact\":\"13800000000\",\"airline\":\"CAUC\",\"positionTitle\":\"机长\",\"department\":\"飞行一部\",\"password\":\"Passw0rd!\",\"passwordConfirm\":\"Passw0rd!\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(registrationJson).doesNotContain("privateKey");
 
         mvc.perform(post("/api/auth/login")
                         .with(csrf())
@@ -245,7 +260,8 @@ public class AuthAndFileFlowTests {
 
         assertThat(fileJson).contains("\"id\"");
         String fileId = fileJson.split("\"id\":\"")[1].split("\"", 2)[0];
-        assertThat(fileJson).contains("LABE_LATTICE_BC:");
+        assertThat(fileJson).contains("\"protectionStatus\":\"ATTRIBUTE_CONTROLLED\"");
+        assertThat(fileJson).doesNotContain("wrappedKey", "LABE_LATTICE_BC:");
 
         byte[] downloaded = mvc.perform(get("/api/files/" + fileId + "/download")
                         .cookie(sessionCookie))

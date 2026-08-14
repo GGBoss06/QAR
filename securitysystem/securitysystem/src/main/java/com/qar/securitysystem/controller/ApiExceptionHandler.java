@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,7 +20,7 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-    private static final HttpClient DEBUG_HTTP = HttpClient.newHttpClient();
+    private static final Logger LOG = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException e, jakarta.servlet.http.HttpServletRequest request) {
@@ -67,6 +69,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleOther(Exception e, jakarta.servlet.http.HttpServletRequest request) {
+        LOG.error("Unhandled API error on {} {}", methodOf(request), pathOf(request), e);
         // #region debug-point D:other-exception
         debugReport("D", "ApiExceptionHandler.handleOther", "[DEBUG] request failed with 500", Map.of(
                 "path", pathOf(request),
@@ -77,7 +80,7 @@ public class ApiExceptionHandler {
         // #endregion
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "code", 500,
-                "message", safeMessage(e, "request_failed")
+                "message", "request_failed"
         ));
     }
 
@@ -98,35 +101,6 @@ public class ApiExceptionHandler {
     }
 
     private static void debugReport(String hypothesisId, String location, String msg, Map<String, Object> data) {
-        try {
-            Path envPath = Path.of(".dbg", "zhangsan-data-zero.env");
-            String url = "http://127.0.0.1:7777/event";
-            String sessionId = "zhangsan-data-zero";
-            if (Files.exists(envPath)) {
-                String env = Files.readString(envPath, StandardCharsets.UTF_8);
-                for (String line : env.split("\\R")) {
-                    if (line.startsWith("DEBUG_SERVER_URL=")) {
-                        url = line.substring("DEBUG_SERVER_URL=".length()).trim();
-                    } else if (line.startsWith("DEBUG_SESSION_ID=")) {
-                        sessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
-                    }
-                }
-            }
-            String payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
-                    "sessionId", sessionId,
-                    "runId", "pre-fix",
-                    "hypothesisId", hypothesisId,
-                    "location", location,
-                    "msg", msg,
-                    "data", data,
-                    "ts", System.currentTimeMillis()
-            ));
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            DEBUG_HTTP.send(req, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception ignored) {
-        }
+        // Legacy debug forwarding is intentionally disabled.
     }
 }

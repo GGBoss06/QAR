@@ -7,6 +7,7 @@ import com.qar.securitysystem.abe.lattice.LatticeUserSecretKeyService;
 import com.qar.securitysystem.dto.EncryptedFileResponse;
 import com.qar.securitysystem.dto.EncryptedFileUploadRequest;
 import com.qar.securitysystem.dto.FileRecordResponse;
+import com.qar.securitysystem.config.FileStorageProperties;
 import com.qar.securitysystem.model.FileRecordEntity;
 import com.qar.securitysystem.model.UserEntity;
 import com.qar.securitysystem.repo.FileRecordRepository;
@@ -30,26 +31,32 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 @Service
 public class FileService {
     private static final String LEGACY_PLAIN = "PLAIN_TEXT";
     private static final int GCM_IV_LENGTH = 12;
-    private static final HttpClient DEBUG_HTTP = HttpClient.newHttpClient();
 
     private final FileRecordRepository fileRecordRepository;
     private final ServerKeyPairService serverKeyPairService;
     private final FileKeyEnvelopeService fileKeyEnvelopeService;
     private final AttributeAuthorityService attributeAuthorityService;
+    private final FileStorageProperties fileStorageProperties;
 
-    public FileService(FileRecordRepository fileRecordRepository, ServerKeyPairService serverKeyPairService, FileKeyEnvelopeService fileKeyEnvelopeService, AttributeAuthorityService attributeAuthorityService) {
+    public FileService(FileRecordRepository fileRecordRepository, ServerKeyPairService serverKeyPairService, FileKeyEnvelopeService fileKeyEnvelopeService, AttributeAuthorityService attributeAuthorityService, FileStorageProperties fileStorageProperties) {
         this.fileRecordRepository = fileRecordRepository;
         this.serverKeyPairService = serverKeyPairService;
         this.fileKeyEnvelopeService = fileKeyEnvelopeService;
         this.attributeAuthorityService = attributeAuthorityService;
+        this.fileStorageProperties = fileStorageProperties;
     }
 
     public FileRecordResponse uploadAndEncrypt(UserEntity user, MultipartFile file, String policy) {
+        if (file.getSize() > fileStorageProperties.getMaxBytes()) {
+            throw new IllegalArgumentException("file_too_large");
+        }
         byte[] raw;
         try {
             raw = file.getBytes();
@@ -76,6 +83,9 @@ public class FileService {
     }
 
     public FileRecordResponse storeEncrypted(UserEntity user, EncryptedFileUploadRequest request) {
+        if (request.getEncryptedData() == null || encodedPayloadExceedsLimit(request.getEncryptedData())) {
+            throw new IllegalArgumentException("file_too_large");
+        }
         byte[] plainData;
         try {
             plainData = Base64.getDecoder().decode(request.getEncryptedData());
@@ -89,7 +99,7 @@ public class FileService {
         r.setOwnerId(resolveBusinessOwner(user));
         r.setOriginalName(normalizeFilename(request.getOriginalName()));
         r.setContentType(request.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : request.getContentType());
-        r.setSizeBytes(request.getSizeBytes() != null ? request.getSizeBytes() : (long) plainData.length);
+        r.setSizeBytes(plainData.length);
         r.setPolicy(request.getPolicy());
         r.setAadPolicyBinding(request.getPolicy());
         r.setWrappedKey(stored.wrappedKey());
@@ -270,6 +280,27 @@ public class FileService {
         return toResponse(record);
     }
 
+    @Transactional
+    public int refreshAllPolicyRecipients() {
+        List<FileRecordEntity> changed = new ArrayList<>();
+        for (FileRecordEntity record : fileRecordRepository.findAll()) {
+            if (!fileKeyEnvelopeService.isLatticeEnvelope(record.getWrappedKey())) {
+                continue;
+            }
+            byte[] fileKey = fileKeyEnvelopeService.unwrapForSystem(record, AccessPurpose.SYSTEM_INTERNAL);
+            try {
+                record.setWrappedKey(fileKeyEnvelopeService.wrapForStorage(fileKey, record.getPolicy()));
+                changed.add(record);
+            } finally {
+                Arrays.fill(fileKey, (byte) 0);
+            }
+        }
+        if (!changed.isEmpty()) {
+            fileRecordRepository.saveAll(changed);
+        }
+        return changed.size();
+    }
+
     private FileRecordResponse toResponse(FileRecordEntity r) {
         FileRecordResponse resp = new FileRecordResponse();
         resp.setId(r.getId());
@@ -278,7 +309,7 @@ public class FileService {
         resp.setContentType(r.getContentType());
         resp.setSizeBytes(r.getSizeBytes());
         resp.setPolicy(r.getPolicy());
-        resp.setWrappedKey(r.getWrappedKey());
+        resp.setProtectionStatus(FileProtectionStatus.fromWrappedKey(r.getWrappedKey()));
         resp.setCreatedAt(r.getCreatedAt() == null ? null : r.getCreatedAt().toString());
         return resp;
     }
@@ -384,6 +415,11 @@ public class FileService {
         return combined;
     }
 
+    private boolean encodedPayloadExceedsLimit(String encodedData) {
+        long maxEncodedLength = ((fileStorageProperties.getMaxBytes() + 2L) / 3L) * 4L;
+        return encodedData.length() > maxEncodedLength;
+    }
+
     private static String safe(String value) {
         return value == null ? "" : value;
     }
@@ -396,36 +432,7 @@ public class FileService {
     }
 
     private static void debugReport(String hypothesisId, String location, String msg, Map<String, Object> data) {
-        try {
-            Path envPath = Path.of(".dbg", "zhangsan-data-zero.env");
-            String url = "http://127.0.0.1:7777/event";
-            String sessionId = "zhangsan-data-zero";
-            if (Files.exists(envPath)) {
-                String env = Files.readString(envPath, StandardCharsets.UTF_8);
-                for (String line : env.split("\\R")) {
-                    if (line.startsWith("DEBUG_SERVER_URL=")) {
-                        url = line.substring("DEBUG_SERVER_URL=".length()).trim();
-                    } else if (line.startsWith("DEBUG_SESSION_ID=")) {
-                        sessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
-                    }
-                }
-            }
-            String payload = new ObjectMapper().writeValueAsString(Map.of(
-                    "sessionId", sessionId,
-                    "runId", "pre-fix",
-                    "hypothesisId", hypothesisId,
-                    "location", location,
-                    "msg", msg,
-                    "data", data,
-                    "ts", System.currentTimeMillis()
-            ));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            DEBUG_HTTP.send(request, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception ignored) {
-        }
+        // Legacy debug forwarding is intentionally disabled.
     }
 
     private record StoredFilePayload(String encryptedDataBase64, String wrappedKey) {

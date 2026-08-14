@@ -1,4 +1,4 @@
-personNo,fullName,idLast4,phone,department,airline,positionTitle
-20260001,张三,1234,13800000000,飞行一部,CAUC,机长
-20260002,李四,5678,13900000000,飞行二部,CAUC,副驾驶
-20260003,王五,0000,,运行控制部,CAUC,签派员
+personNo,fullName,idLast4,phone,department,airline,positionTitle,personCategory,dutyDomain,fleetGroup,clearanceLevel
+20260001,张三,1234,13800000000,飞行一部,CAUC,机长,飞行机组,飞行运行,CAUC机队,L1
+20260002,李四,5678,13900000000,飞行二部,CAUC,副驾驶,飞行机组,飞行运行,CAUC机队,L1
+20260003,王五,0000,,运行控制部,CAUC,签派员,运行控制,运行控制,CAUC机队,L1

@@ -55,44 +55,27 @@
           <div class="container">
             <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:20px; margin-bottom:24px;">
               <div class="card stats-card"><div class="card-h"><div class="h2">总文件数</div></div><div class="card-b"><div class="stats-value" id="ov-total-files">0</div><div class="stats-desc">系统内全部文件</div></div></div>
-              <div class="card stats-card"><div class="card-h"><div class="h2">L-ABE新格式</div></div><div class="card-b"><div class="stats-value" id="ov-lattice-files">0</div><div class="stats-desc">LABE_LATTICE_BC</div></div></div>
+              <div class="card stats-card"><div class="card-h"><div class="h2">受控文件</div></div><div class="card-b"><div class="stats-value" id="ov-lattice-files">0</div><div class="stats-desc">已启用访问控制</div></div></div>
               <div class="card stats-card"><div class="card-h"><div class="h2">属性权威</div></div><div class="card-b"><div class="stats-value" id="ov-authorities">0</div><div class="stats-desc">已加载权威数量</div></div></div>
-              <div class="card stats-card"><div class="card-h"><div class="h2">属性密钥材料</div></div><div class="card-b"><div class="stats-value" id="ov-bundles">0</div><div class="stats-desc">已生成用户属性密钥</div></div></div>
+              <div class="card stats-card"><div class="card-h"><div class="h2">已授权人员</div></div><div class="card-b"><div class="stats-value" id="ov-bundles">0</div><div class="stats-desc">已具备访问凭据</div></div></div>
             </div>
 
-            <div class="grid" style="grid-template-columns:1.1fr 1fr;gap:24px">
+            <div class="grid" style="grid-template-columns:1fr;gap:24px">
               <div class="card">
                 <div class="card-h">
                   <div class="h2">权威分工</div>
-                  <div class="muted">展示多权威格基CP-ABE研究原型中的权威域与负责属性范围</div>
+                  <div class="muted">展示属性策略与用户绑定格密钥封装原型中的权威域及负责范围</div>
                 </div>
                 <div class="card-b">
                   <table class="table" id="labe-authorities-table">
                     <thead>
                       <tr>
                         <th>权威</th>
-                        <th>算法</th>
                         <th>负责属性</th>
-                        <th>指纹</th>
                       </tr>
                     </thead>
                     <tbody></tbody>
                   </table>
-                </div>
-              </div>
-              <div class="card">
-                <div class="card-h">
-                  <div class="h2">迁移状态</div>
-                  <div class="muted">新旧封装格式并存时，可在这里观察迁移进度</div>
-                </div>
-                <div class="card-b">
-                  <div class="mini-stats-grid">
-                    <div class="mini-stat"><div class="mini-stat-label">L-ABE新格式</div><div class="mini-stat-value" id="ov-lattice-mini">0</div></div>
-                    <div class="mini-stat"><div class="mini-stat-label">原型旧格式</div><div class="mini-stat-value" id="ov-prototype-files">0</div></div>
-                    <div class="mini-stat"><div class="mini-stat-label">历史兼容格式</div><div class="mini-stat-value" id="ov-legacy-files">0</div></div>
-                    <div class="mini-stat"><div class="mini-stat-label">人员总数</div><div class="mini-stat-value" id="ov-persons">0</div></div>
-                  </div>
-                  <div class="info-panel" id="labe-summary" style="margin-top:16px">系统将文件内容留在AES-GCM层，将文件AES密钥替换为L-ABE封装层，并保留旧格式兼容。</div>
                 </div>
               </div>
             </div>
@@ -100,7 +83,7 @@
             <div class="card" style="margin-top:24px">
               <div class="card-h">
                 <div class="h2">人员属性与发钥状态</div>
-                <div class="muted">点击人员查看其属性集合、归属权威和属性密钥材料状态</div>
+                <div class="muted">点击人员查看其访问属性和授权状态</div>
               </div>
               <div class="card-b">
                 <div class="grid" style="grid-template-columns:1.2fr 1fr;gap:24px">
@@ -114,7 +97,7 @@
                           <th>人员分类</th>
                           <th>密级</th>
                           <th>账号</th>
-                          <th>密钥材料</th>
+                          <th>授权状态</th>
                         </tr>
                       </thead>
                       <tbody></tbody>
@@ -126,10 +109,6 @@
                       <div class="label">属性集合</div>
                       <div class="chip-list" id="labe-person-attributes"></div>
                     </div>
-                    <div>
-                      <div class="label">归属权威</div>
-                      <div class="chip-list" id="labe-person-authorities"></div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -139,7 +118,7 @@
       </div>
     </div>
     <div class="toast" id="toast"><div class="t">提示</div><div class="m"></div></div>
-    <script src="/assets/common.js"></script>
+    <script src="/assets/common.js?v=20260814-csrf"></script>
     <script src="/assets/admin-labe.js"></script>
   </body>
 </html>

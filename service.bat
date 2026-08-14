@@ -1,3 +1,4 @@
 @echo off
-cd securitysystem/securitysystem
-.\mvnw spring-boot:run
+setlocal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-mysql.ps1"
+endlocal

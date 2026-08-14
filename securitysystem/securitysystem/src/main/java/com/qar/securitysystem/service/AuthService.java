@@ -13,11 +13,9 @@ import com.qar.securitysystem.repo.AccountRequestRepository;
 import com.qar.securitysystem.repo.PersonRecordRepository;
 import com.qar.securitysystem.repo.UserRepository;
 import com.qar.securitysystem.util.IdUtil;
-import com.qar.securitysystem.util.RSAUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.security.KeyPair;
 import java.time.Instant;
 
 @Service
@@ -104,11 +102,6 @@ public class AuthService {
             throw new IllegalArgumentException("profile_mismatch");
         }
 
-        // Generate RSA Key Pair
-        KeyPair keyPair = RSAUtil.generateKeyPair();
-        String pub = RSAUtil.encodeKey(keyPair.getPublic().getEncoded());
-        String priv = RSAUtil.encodeKey(keyPair.getPrivate().getEncoded());
-
         AccountRequestEntity e = new AccountRequestEntity();
         e.setId(IdUtil.newId());
         e.setPersonNo(personNo);
@@ -121,8 +114,7 @@ public class AuthService {
         e.setPasswordHash(passwordEncoder.encode(req.getPassword()));
         e.setStatus(AccountRequestStatus.PENDING);
         e.setCreatedAt(Instant.now());
-        e.setPublicKey(pub);
-        return new RegistrationResult(accountRequestRepository.save(e), priv);
+        return new RegistrationResult(accountRequestRepository.save(e));
     }
 
     public UserEntity authenticate(LoginRequest req) {

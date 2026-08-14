@@ -46,7 +46,7 @@ http.request.uri contains "encrypt" || http.request.uri contains "decrypt"
 **步骤：**
 1. 启动Wireshark捕获（过滤器：`tcp.port == 18234 || tcp.port == 8101`）
 2. 浏览器访问 http://localhost:8101/auth.html
-3. 登录系统（admin / CAUCqar）
+3. 使用部署时配置的管理员账号和密码登录系统
 4. 进入工作台，上传一个测试文件
 5. 停止Wireshark捕获
 
@@ -102,7 +102,7 @@ http.request.uri contains "encrypt" || http.request.uri contains "decrypt"
 
 ```
 [前端] --POST /api/auth/login--> [主服务器:8101]
-请求: {"emailOrUsername": "admin", "password": "CAUCqar"}
+请求: {"emailOrUsername": "admin", "password": "<部署时配置的密码>"}
 响应: Set-Cookie: QAR_SESSION=会话令牌
       {"id": "用户ID", "role": "admin"}
 ```

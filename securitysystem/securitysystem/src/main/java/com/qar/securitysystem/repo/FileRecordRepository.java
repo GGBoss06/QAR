@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface FileRecordRepository extends JpaRepository<FileRecordEntity, String> {
+    List<FileRecordEntity> findAllByOrderByCreatedAtDesc();
+
     List<FileRecordEntity> findAllByOwnerIdOrderByCreatedAtDesc(String ownerId);
 
     List<FileRecordEntity> findAllByOwnerIdInOrderByCreatedAtDesc(List<String> ownerIds);

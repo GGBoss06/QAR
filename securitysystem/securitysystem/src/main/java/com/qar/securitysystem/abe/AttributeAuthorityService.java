@@ -21,7 +21,6 @@ import java.util.Set;
 
 @Service
 public class AttributeAuthorityService {
-    private static final HttpClient DEBUG_HTTP = HttpClient.newHttpClient();
     private final PersonRecordRepository personRecordRepository;
     private final AttributePolicyEvaluator policyEvaluator;
 
@@ -117,35 +116,6 @@ public class AttributeAuthorityService {
     }
 
     private static void debugReport(String hypothesisId, String location, String msg, Map<String, Object> data) {
-        try {
-            Path envPath = Path.of(".dbg", "zhangsan-data-zero.env");
-            String url = "http://127.0.0.1:7777/event";
-            String sessionId = "zhangsan-data-zero";
-            if (Files.exists(envPath)) {
-                String env = Files.readString(envPath, StandardCharsets.UTF_8);
-                for (String line : env.split("\\R")) {
-                    if (line.startsWith("DEBUG_SERVER_URL=")) {
-                        url = line.substring("DEBUG_SERVER_URL=".length()).trim();
-                    } else if (line.startsWith("DEBUG_SESSION_ID=")) {
-                        sessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
-                    }
-                }
-            }
-            String payload = new ObjectMapper().writeValueAsString(Map.of(
-                    "sessionId", sessionId,
-                    "runId", "pre-fix",
-                    "hypothesisId", hypothesisId,
-                    "location", location,
-                    "msg", msg,
-                    "data", data,
-                    "ts", System.currentTimeMillis()
-            ));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            DEBUG_HTTP.send(request, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception ignored) {
-        }
+        // Legacy debug forwarding is intentionally disabled.
     }
 }

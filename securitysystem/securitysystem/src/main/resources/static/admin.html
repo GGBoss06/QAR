@@ -93,7 +93,7 @@
 
           <div class="container">
       <!-- 概览卡片 -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 24px;">
+      <div class="grid admin-stats-grid" style="gap:20px;margin-bottom:24px">
         <div class="card stats-card">
           <div class="card-h">
             <div class="h2">用户总数</div>
@@ -113,21 +113,27 @@
           </div>
         </div>
         <div class="card stats-card">
-          <div class="h2">数据总量</div>
+          <div class="card-h">
+            <div class="h2">数据总量</div>
+          </div>
           <div class="card-b">
             <div class="stats-value" id="total-data">0</div>
             <div class="stats-desc">已上传文件数</div>
           </div>
         </div>
         <div class="card stats-card">
-          <div class="h2">未处理反馈</div>
+          <div class="card-h">
+            <div class="h2">未处理反馈</div>
+          </div>
           <div class="card-b">
             <div class="stats-value" id="pending-feedback">0</div>
             <div class="stats-desc">需要回复的反馈</div>
           </div>
         </div>
         <div class="card stats-card">
-          <div class="h2">L-ABE新链路</div>
+          <div class="card-h">
+            <div class="h2">L-ABE新链路</div>
+          </div>
           <div class="card-b">
             <div class="stats-value" id="labe-lattice-files">0</div>
             <div class="stats-desc">已采用LABE_LATTICE_BC封装</div>
@@ -322,7 +328,7 @@
       <div class="m"></div>
     </div>
 
-    <script src="/assets/common.js"></script>
+    <script src="/assets/common.js?v=20260814-csrf"></script>
     <script src="/assets/admin.js"></script>
   </body>
 </html>

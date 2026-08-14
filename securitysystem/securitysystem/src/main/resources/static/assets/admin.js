@@ -56,13 +56,15 @@ async function refreshUsers() {
   }
 }
 
-function envelopeTypeLabel(wrappedKey) {
-  const value = wrappedKey || ""
-  if (value.startsWith("LABE_LATTICE_BC:")) return "格基L-ABE"
-  if (value.startsWith("LABE_PROTO_BC:")) return "原型LABE"
-  if (value.startsWith("RSA_WRAP_BC:")) return "RSA兼容"
-  if (!value) return "明文/空"
-  return "其他"
+function protectionTypeLabel(status) {
+  const labels = {
+    ATTRIBUTE_CONTROLLED: "属性访问控制",
+    LEGACY_ATTRIBUTE: "旧版属性控制",
+    LEGACY_RSA: "旧版加密",
+    ENCRYPTED: "已加密",
+    UNPROTECTED: "未加密",
+  }
+  return labels[status] || "未知"
 }
 
 async function refreshFiles() {
@@ -77,7 +79,7 @@ async function refreshFiles() {
     tr.children[0].textContent = r.id
     tr.children[1].textContent = r.ownerLabel || r.ownerId
     tr.children[2].textContent = r.originalName
-    tr.children[3].textContent = envelopeTypeLabel(r.wrappedKey)
+    tr.children[3].textContent = protectionTypeLabel(r.protectionStatus)
     tr.children[4].textContent = fmtBytes(r.sizeBytes)
     tr.children[5].textContent = r.policy || "-"
     tr.children[6].textContent = (r.createdAt || "").replace("T", " ").replace("Z", "")

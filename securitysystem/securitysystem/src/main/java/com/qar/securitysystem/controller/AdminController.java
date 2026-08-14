@@ -11,6 +11,7 @@ import com.qar.securitysystem.security.AppPrincipal;
 import com.qar.securitysystem.service.AdminService;
 import com.qar.securitysystem.service.FileService;
 import com.qar.securitysystem.service.LabeAdminService;
+import com.qar.securitysystem.abe.lattice.LatticeUserSecretKeyService;
 import com.qar.securitysystem.util.SecurityUtil;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -107,7 +108,7 @@ public class AdminController {
     @PostMapping("/labe/persons/{id}/issue")
     public ResponseEntity<?> issueLabeBundle(@PathVariable("id") String id) {
         try {
-            return ResponseEntity.ok(adminService.issueLatticeBundleForPerson(id, "admin_manual_issue"));
+            return ResponseEntity.ok(toBundleSummary(adminService.issueLatticeBundleForPerson(id, "admin_manual_issue")));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Map.of("code", 400, "message", e.getMessage()));
         }
@@ -126,7 +127,7 @@ public class AdminController {
     @PostMapping("/labe/persons/{id}/restore")
     public ResponseEntity<?> restoreLabeAccess(@PathVariable("id") String id, @RequestBody(required = false) AdminReasonRequest req) {
         try {
-            return ResponseEntity.ok(adminService.restoreLatticeAccessForPerson(id, req == null ? null : req.getReason()));
+            return ResponseEntity.ok(toBundleSummary(adminService.restoreLatticeAccessForPerson(id, req == null ? null : req.getReason())));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Map.of("code", 400, "message", e.getMessage()));
         }
@@ -230,5 +231,21 @@ public class AdminController {
             return "download.bin";
         }
         return name.replace("\\", "_").replace("/", "_").replace("\n", " ").replace("\r", " ");
+    }
+
+    private static java.util.Map<String, Object> toBundleSummary(LatticeUserSecretKeyService.UserSecretBundle bundle) {
+        if (bundle == null) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        summary.put("bundleId", bundle.bundleId);
+        summary.put("userId", bundle.userId);
+        summary.put("bundleVersion", bundle.bundleVersion);
+        summary.put("status", bundle.status);
+        summary.put("keyScheme", bundle.keyScheme);
+        summary.put("issuedReason", bundle.issuedReason);
+        summary.put("issuedAt", bundle.issuedAt);
+        summary.put("attributeCount", bundle.attributes == null ? 0 : bundle.attributes.size());
+        return summary;
     }
 }

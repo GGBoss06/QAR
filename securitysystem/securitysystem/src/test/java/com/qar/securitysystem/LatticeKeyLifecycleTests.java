@@ -1,6 +1,9 @@
 package com.qar.securitysystem;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qar.securitysystem.abe.AccessPurpose;
+import com.qar.securitysystem.abe.lattice.LatticeAbeService;
 import com.qar.securitysystem.abe.lattice.LatticeUserSecretKeyService;
 import com.qar.securitysystem.dto.EncryptedFileUploadRequest;
 import com.qar.securitysystem.dto.FileRecordResponse;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -57,6 +61,9 @@ class LatticeKeyLifecycleTests {
 
     @Autowired
     private FileService fileService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -111,9 +118,16 @@ class LatticeKeyLifecycleTests {
         Assertions.assertNotNull(current);
         Assertions.assertEquals(2L, current.bundleVersion);
         Assertions.assertEquals("person_attributes_updated", current.issuedReason);
+        Assertions.assertNotEquals(initial.recipientKeyId, current.recipientKeyId);
         Assertions.assertTrue(current.attributes.contains("department:运行控制部".toLowerCase()));
         Assertions.assertFalse(current.attributes.contains("department:飞行一部".toLowerCase()));
-        Assertions.assertTrue(Files.exists(LATTICE_USER_DIR.resolve("history").resolve(user.getId() + ".v" + initial.bundleVersion + ".json")));
+        Path archivedPath = LATTICE_USER_DIR.resolve("history").resolve(user.getId() + ".v" + initial.bundleVersion + ".json");
+        Assertions.assertTrue(Files.exists(archivedPath));
+        JsonNode archived = Assertions.assertDoesNotThrow(() -> objectMapper.readTree(archivedPath.toFile()));
+        Assertions.assertTrue(archived.path("recipientPrivateKey").isNull());
+        for (JsonNode key : archived.path("attributeKeys")) {
+            Assertions.assertTrue(key.path("privateKey").isNull());
+        }
     }
 
     @Test
@@ -131,6 +145,60 @@ class LatticeKeyLifecycleTests {
         Assertions.assertNotNull(current);
         Assertions.assertEquals(1L, current.bundleVersion);
         Assertions.assertEquals("seed", current.issuedReason);
+    }
+
+    @Test
+    void differentValuesUnderSameAuthorityReceiveDifferentKyberKeys() {
+        PersonRecordEntity firstPerson = savePerson("20269995", "属性隔离用户甲", "飞行一部");
+        PersonRecordEntity secondPerson = savePerson("20269996", "属性隔离用户乙", "运行控制部");
+        UserEntity firstUser = saveUser(firstPerson);
+        UserEntity secondUser = saveUser(secondPerson);
+
+        LatticeUserSecretKeyService.UserSecretBundle first = latticeUserSecretKeyService.issueForUser(firstUser, "isolation_test");
+        LatticeUserSecretKeyService.UserSecretBundle second = latticeUserSecretKeyService.issueForUser(secondUser, "isolation_test");
+
+        LatticeUserSecretKeyService.AttributeSecretKey firstDepartment = first.attributeKeys.get("department:飞行一部");
+        LatticeUserSecretKeyService.AttributeSecretKey secondDepartment = second.attributeKeys.get("department:运行控制部");
+
+        Assertions.assertEquals("attribute-bound-kyber768-v2", first.keyScheme);
+        Assertions.assertNotNull(firstDepartment);
+        Assertions.assertNotNull(secondDepartment);
+        Assertions.assertEquals("org", firstDepartment.authorityId);
+        Assertions.assertEquals("org", secondDepartment.authorityId);
+        Assertions.assertNotEquals(firstDepartment.keyId, secondDepartment.keyId);
+        Assertions.assertNotEquals(firstDepartment.privateKey, secondDepartment.privateKey);
+    }
+
+    @Test
+    void splitAttributesAcrossUsersDoNotCreateAnAuthorizedRecipient() throws Exception {
+        PersonRecordEntity departmentOnlyPerson = savePerson("20269997", "部门属性用户", "飞行一部");
+        PersonRecordEntity clearanceOnlyPerson = savePerson("20269998", "等级属性用户", "运行控制部");
+        clearanceOnlyPerson.setClearanceLevel("L2");
+        personRecordRepository.save(clearanceOnlyPerson);
+        UserEntity departmentOnlyUser = saveUser(departmentOnlyPerson);
+        UserEntity clearanceOnlyUser = saveUser(clearanceOnlyPerson);
+        latticeUserSecretKeyService.issueForUser(departmentOnlyUser, "collusion_test");
+        latticeUserSecretKeyService.issueForUser(clearanceOnlyUser, "collusion_test");
+
+        EncryptedFileUploadRequest req = new EncryptedFileUploadRequest();
+        req.setEncryptedData(Base64.getEncoder().encodeToString("split-attributes".getBytes()));
+        req.setOriginalName("split-attributes.txt");
+        req.setContentType("text/plain");
+        req.setSizeBytes(16L);
+        req.setPolicy("department:飞行一部 AND clearanceLevel:L2");
+        FileRecordResponse saved = fileService.storeEncrypted(departmentOnlyUser, req);
+        FileRecordEntity record = fileRecordRepository.findById(saved.getId()).orElseThrow();
+
+        String encodedEnvelope = record.getWrappedKey().substring(LatticeAbeService.LATTICE_PREFIX.length());
+        JsonNode envelope = objectMapper.readTree(Base64.getDecoder().decode(encodedEnvelope));
+        Assertions.assertEquals(3, envelope.path("version").asInt());
+        Assertions.assertTrue(envelope.path("recipients").isArray());
+        Assertions.assertFalse(hasRecipient(envelope, departmentOnlyUser.getId()));
+        Assertions.assertFalse(hasRecipient(envelope, clearanceOnlyUser.getId()));
+        Assertions.assertThrows(AccessDeniedException.class,
+                () -> fileService.decryptForUser(record, departmentOnlyUser, AccessPurpose.USER_PAYLOAD));
+        Assertions.assertThrows(AccessDeniedException.class,
+                () -> fileService.decryptForUser(record, clearanceOnlyUser, AccessPurpose.USER_PAYLOAD));
     }
 
     @Test
@@ -165,8 +233,18 @@ class LatticeKeyLifecycleTests {
         Assertions.assertNotNull(restored);
         Assertions.assertEquals(2L, restored.bundleVersion);
         Assertions.assertEquals("manual_restore", restored.issuedReason);
-        Assertions.assertTrue(fileService.canUserAccess(record, restoredUser));
-        Assertions.assertDoesNotThrow(() -> fileService.decryptForUser(record, restoredUser, AccessPurpose.USER_PAYLOAD));
+        FileRecordEntity refreshedRecord = fileRecordRepository.findById(saved.getId()).orElseThrow();
+        Assertions.assertTrue(fileService.canUserAccess(refreshedRecord, restoredUser));
+        Assertions.assertDoesNotThrow(() -> fileService.decryptForUser(refreshedRecord, restoredUser, AccessPurpose.USER_PAYLOAD));
+    }
+
+    private static boolean hasRecipient(JsonNode envelope, String userId) {
+        for (JsonNode recipient : envelope.path("recipients")) {
+            if (userId.equals(recipient.path("recipientId").asText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private PersonRecordEntity savePerson(String personNo, String fullName, String department) {

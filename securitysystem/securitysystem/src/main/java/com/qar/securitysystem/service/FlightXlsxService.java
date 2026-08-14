@@ -34,7 +34,7 @@ public class FlightXlsxService {
     }
 
     public List<FlightXlsxFileResponse> listXlsxFiles() {
-        List<FileRecordEntity> all = fileRecordRepository.findAll();
+        List<FileRecordEntity> all = fileRecordRepository.findAllByOrderByCreatedAtDesc();
         List<FlightXlsxFileResponse> out = new ArrayList<>();
         for (FileRecordEntity r : all) {
             if (!isXlsx(r)) {
@@ -48,11 +48,6 @@ public class FlightXlsxService {
             f.setCreatedAt(r.getCreatedAt() == null ? null : r.getCreatedAt().toString());
             out.add(f);
         }
-        out.sort((a, b) -> {
-            String ca = a.getCreatedAt() == null ? "" : a.getCreatedAt();
-            String cb = b.getCreatedAt() == null ? "" : b.getCreatedAt();
-            return cb.compareTo(ca);
-        });
         return out;
     }
 

@@ -130,26 +130,28 @@
             <button class="btn" id="btn-reset-filters">重置筛选</button>
           </div>
 
-          <table class="table" id="persons">
-            <thead>
-              <tr>
-                <th class="sortable" data-sort="personNo">工号</th>
-                <th class="sortable" data-sort="fullName">姓名</th>
-                <th class="sortable" data-sort="airline">航司</th>
-                <th class="sortable" data-sort="positionTitle">职位</th>
-                <th class="sortable" data-sort="department">部门</th>
-                <th class="sortable" data-sort="personCategory">人员分类</th>
-                <th class="sortable" data-sort="dutyDomain">职责域</th>
-                <th class="sortable" data-sort="fleetGroup">机队</th>
-                <th class="sortable" data-sort="clearanceLevel">密级</th>
-                <th>L-ABE状态</th>
-                <th class="sortable" data-sort="phone">电话</th>
-                <th class="sortable" data-sort="createdAt">创建时间</th>
-                <th class="actions">操作</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table" id="persons">
+              <thead>
+                <tr>
+                  <th class="sortable" data-sort="personNo">工号</th>
+                  <th class="sortable" data-sort="fullName">姓名</th>
+                  <th class="sortable" data-sort="airline">航司</th>
+                  <th class="sortable" data-sort="positionTitle">职位</th>
+                  <th class="sortable" data-sort="department">部门</th>
+                  <th class="sortable" data-sort="personCategory">人员分类</th>
+                  <th class="sortable" data-sort="dutyDomain">职责域</th>
+                  <th class="sortable" data-sort="fleetGroup">机队</th>
+                  <th class="sortable" data-sort="clearanceLevel">密级</th>
+                  <th>L-ABE状态</th>
+                  <th class="sortable" data-sort="phone">电话</th>
+                  <th class="sortable" data-sort="createdAt">创建时间</th>
+                  <th class="actions">操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
           <div id="empty-msg" class="muted" style="display:none; text-align:center; padding: 20px;">暂无匹配的数据记录</div>
         </div>
       </div>
@@ -190,7 +192,7 @@
       <div class="m"></div>
     </div>
 
-    <script src="/assets/common.js"></script>
+    <script src="/assets/common.js?v=20260814-csrf"></script>
     <script src="/assets/admin-data.js"></script>
   </body>
 </html>

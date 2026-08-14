@@ -16,6 +16,18 @@
       .table th.sortable.asc:after { content: '↑'; opacity: 1; }
       .table th.sortable.desc:after { content: '↓'; opacity: 1; }
       .row-input { width: 100%; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      .admin-qar-layout { grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); }
+      .admin-qar-layout > * { min-width: 0; }
+      .qar-table-scroll { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+      .qar-table-scroll .table { width: max-content; min-width: 100%; }
+      #qar-table th, #qar-table td, #preview-table th, #preview-table td { max-width: 280px; overflow-wrap: anywhere; }
+      @media (max-width: 1023px) {
+        .admin-qar-layout { grid-template-columns: minmax(0, 1fr); }
+      }
+      @media (max-width: 640px) {
+        body:not(.auth-page) .container { margin: 16px 12px; padding: 16px; }
+        .card-h, .card-b { padding-left: 16px; padding-right: 16px; }
+      }
     </style>
   </head>
   <body>
@@ -106,13 +118,13 @@
                 </div>
               </div>
               <div class="card-b">
-                <div class="grid" style="grid-template-columns:1.2fr .8fr;gap:20px">
+                <div class="grid admin-qar-layout" style="gap:20px">
                   <div class="card" style="margin:0">
                     <div class="card-h">
                       <div class="h2">已入库QAR数据</div>
                     </div>
                     <div class="card-b">
-                      <div style="overflow:auto">
+                      <div class="qar-table-scroll">
                         <table class="table" id="qar-table">
                           <thead></thead>
                           <tbody></tbody>
@@ -145,7 +157,7 @@
                           <button class="btn primary" id="btn-import">导入表格</button>
                         </div>
                         <div class="muted" id="preview-info">未解析到数据</div>
-                        <div style="overflow:auto">
+                        <div class="qar-table-scroll">
                           <table class="table" id="preview-table">
                             <thead></thead>
                             <tbody></tbody>
@@ -165,7 +177,7 @@
       <div class="t">提示</div>
       <div class="m"></div>
     </div>
-    <script src="/assets/common.js"></script>
+    <script src="/assets/common.js?v=20260814-csrf"></script>
     <script src="/assets/transport.js"></script>
     <script src="/assets/admin-qar.js"></script>
   </body>

@@ -1,6 +1,8 @@
 package com.qar.securitysystem.abe.lattice;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.qar.securitysystem.abe.AttributeAuthorityService;
 import com.qar.securitysystem.model.UserEntity;
 import com.qar.securitysystem.util.IdUtil;
@@ -12,8 +14,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Base64;
@@ -25,19 +29,21 @@ import java.util.Set;
 
 @Service
 public class LatticeUserSecretKeyService {
-    private static final HttpClient DEBUG_HTTP = HttpClient.newHttpClient();
     private final AttributeAuthorityService attributeAuthorityService;
-    private final LatticeAuthorityKeyService authorityKeyService;
+    private final LatticeAttributeKeyService attributeKeyService;
+    private final LatticeCryptoSupport cryptoSupport;
     private final ObjectMapper objectMapper;
     private final Path userKeyDir;
     private final Path userKeyHistoryDir;
 
     public LatticeUserSecretKeyService(AttributeAuthorityService attributeAuthorityService,
-                                       LatticeAuthorityKeyService authorityKeyService,
+                                       LatticeAttributeKeyService attributeKeyService,
+                                       LatticeCryptoSupport cryptoSupport,
                                        ObjectMapper objectMapper,
                                        @Value("${app.crypto.lattice-user-dir:data/crypto/lattice-users}") String userKeyDir) {
         this.attributeAuthorityService = attributeAuthorityService;
-        this.authorityKeyService = authorityKeyService;
+        this.attributeKeyService = attributeKeyService;
+        this.cryptoSupport = cryptoSupport;
         this.objectMapper = objectMapper;
         this.userKeyDir = Path.of(userKeyDir);
         this.userKeyHistoryDir = this.userKeyDir.resolve("history");
@@ -50,7 +56,11 @@ public class LatticeUserSecretKeyService {
         try {
             Set<String> attributes = attributeAuthorityService.resolveUserAttributes(user);
             UserSecretBundle existing = loadIfExists(user.getId());
-            if (existing != null && attributes.equals(existing.attributes)) {
+            if (existing != null
+                    && LatticeAttributeKeyService.KEY_SCHEME.equals(existing.keyScheme)
+                    && existing.recipientPrivateKey != null && !existing.recipientPrivateKey.isBlank()
+                    && existing.recipientPublicKey != null && !existing.recipientPublicKey.isBlank()
+                    && attributes.equals(existing.attributes)) {
                 // #region debug-point B:user-bundle-reuse
                 debugReport("B", "LatticeUserSecretKeyService:getOrCreate:reuse",
                         "[DEBUG] reused lattice user secret bundle",
@@ -92,7 +102,7 @@ public class LatticeUserSecretKeyService {
             }
             Set<String> attributes = attributeAuthorityService.resolveUserAttributes(user);
             UserSecretBundle bundle = buildBundle(user, attributes, previous, normalizeReason(reason));
-            Files.writeString(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(bundle), StandardCharsets.UTF_8);
+            writeJsonAtomically(path, bundle);
             // #region debug-point B:user-bundle-build
             debugReport("B", "LatticeUserSecretKeyService:issueForUser:build",
                     "[DEBUG] issued lattice user secret bundle",
@@ -135,7 +145,7 @@ public class LatticeUserSecretKeyService {
             active.revokedReason = normalizeReason(reason);
             long version = active.bundleVersion == null ? 0L : active.bundleVersion;
             Path historyPath = userKeyHistoryDir.resolve(userId + ".v" + version + ".json");
-            Files.writeString(historyPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(active), StandardCharsets.UTF_8);
+            writeArchivedAudit(historyPath, active);
             Files.deleteIfExists(bundlePath(userId));
         } catch (Exception e) {
             throw new RuntimeException("failed_to_revoke_lattice_user_secret", e);
@@ -181,6 +191,27 @@ public class LatticeUserSecretKeyService {
         }
     }
 
+    public long sanitizeArchivedBundles() {
+        try {
+            if (!Files.exists(userKeyHistoryDir)) {
+                return 0L;
+            }
+            long sanitized = 0L;
+            try (var stream = Files.list(userKeyHistoryDir)) {
+                for (Path path : stream.filter(item -> item.getFileName().toString().endsWith(".json")).toList()) {
+                    JsonNode root = objectMapper.readTree(Files.readString(path, StandardCharsets.UTF_8));
+                    if (scrubPrivateKeys(root)) {
+                        writeJsonAtomically(path, root);
+                        sanitized++;
+                    }
+                }
+            }
+            return sanitized;
+        } catch (Exception e) {
+            throw new RuntimeException("failed_to_sanitize_lattice_key_history", e);
+        }
+    }
+
     public Map<String, AttributeSecretKey> getAttributeKeys(String userId) {
         UserSecretBundle bundle = loadIfExists(userId);
         if (bundle == null || bundle.attributeKeys == null) {
@@ -197,6 +228,10 @@ public class LatticeUserSecretKeyService {
         public String issuedReason;
         public String revokedReason;
         public String attributeDigest;
+        public String keyScheme;
+        public String recipientKeyId;
+        public String recipientPublicKey;
+        public String recipientPrivateKey;
         public Instant issuedAt;
         public Instant revokedAt;
         public Set<String> attributes;
@@ -204,6 +239,7 @@ public class LatticeUserSecretKeyService {
     }
 
     public static class AttributeSecretKey {
+        public String keyId;
         public String attribute;
         public String authorityId;
         public String algorithm;
@@ -234,13 +270,18 @@ public class LatticeUserSecretKeyService {
         bundle.issuedAt = Instant.now();
         bundle.attributes = attributes;
         bundle.attributeDigest = digestAttributes(attributes);
+        bundle.keyScheme = LatticeAttributeKeyService.KEY_SCHEME;
+        LatticeCryptoSupport.KyberKeyPair recipientPair = cryptoSupport.generateKeyPair();
+        bundle.recipientPublicKey = Base64.getEncoder().encodeToString(recipientPair.publicKey().getEncoded());
+        bundle.recipientPrivateKey = Base64.getEncoder().encodeToString(recipientPair.privateKey().getEncoded());
+        bundle.recipientKeyId = cryptoSupport.fingerprint(recipientPair.publicKey().getEncoded());
         bundle.attributeKeys = new LinkedHashMap<>();
         for (String attribute : attributes) {
-            String authority = authorityKeyService.resolveAuthorityForAttribute(attribute);
-            LatticeAuthorityKeyService.AuthorityKeyMaterial material = authorityKeyService.getAuthorityMaterial(authority);
+            LatticeAttributeKeyService.AttributeKeyMaterial material = attributeKeyService.getAttributeMaterial(attribute);
             AttributeSecretKey secret = new AttributeSecretKey();
+            secret.keyId = material.keyId;
             secret.attribute = attribute;
-            secret.authorityId = authority;
+            secret.authorityId = material.authorityId;
             secret.algorithm = material.algorithm;
             secret.privateKey = material.privateKey;
             secret.publicKey = material.publicKey;
@@ -296,15 +337,65 @@ public class LatticeUserSecretKeyService {
             if (bundle == null || bundle.userId == null || bundle.userId.isBlank()) {
                 return;
             }
+            if (!LatticeAttributeKeyService.KEY_SCHEME.equals(bundle.keyScheme)) {
+                return;
+            }
             bundle.status = "rotated";
             bundle.revokedAt = Instant.now();
             bundle.revokedReason = normalizeReason(reason);
             long version = bundle.bundleVersion == null ? 0L : bundle.bundleVersion;
             String archiveName = bundle.userId + ".v" + version + ".json";
             Path historyPath = userKeyHistoryDir.resolve(archiveName);
-            Files.writeString(historyPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(bundle), StandardCharsets.UTF_8);
+            writeArchivedAudit(historyPath, bundle);
         } catch (Exception e) {
             throw new RuntimeException("failed_to_archive_lattice_user_secret", e);
+        }
+    }
+
+    private void writeArchivedAudit(Path historyPath, UserSecretBundle source) throws Exception {
+        JsonNode audit = objectMapper.valueToTree(source);
+        scrubPrivateKeys(audit);
+        writeJsonAtomically(historyPath, audit);
+    }
+
+    private static boolean scrubPrivateKeys(JsonNode node) {
+        boolean changed = false;
+        if (node instanceof ObjectNode objectNode) {
+            for (var fields = objectNode.fields(); fields.hasNext(); ) {
+                var field = fields.next();
+                String normalizedName = field.getKey().replace("_", "").replace("-", "").toLowerCase();
+                if ((normalizedName.contains("privatekey") || normalizedName.equals("secretkey"))
+                        && !field.getValue().isNull()) {
+                    objectNode.putNull(field.getKey());
+                    changed = true;
+                } else {
+                    changed |= scrubPrivateKeys(field.getValue());
+                }
+            }
+        } else if (node != null && node.isArray()) {
+            for (JsonNode child : node) {
+                changed |= scrubPrivateKeys(child);
+            }
+        }
+        return changed;
+    }
+
+    private void writeJsonAtomically(Path destination, Object value) throws Exception {
+        Files.createDirectories(destination.getParent());
+        Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp-" + IdUtil.newId());
+        try {
+            Files.writeString(temporary,
+                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value),
+                    StandardCharsets.UTF_8);
+            try {
+                Files.move(temporary, destination,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
         }
     }
 
@@ -357,35 +448,6 @@ public class LatticeUserSecretKeyService {
     }
 
     private static void debugReport(String hypothesisId, String location, String msg, Map<String, Object> data) {
-        try {
-            Path envPath = Path.of(".dbg", "lattice-unwrap.env");
-            String url = "http://127.0.0.1:7777/event";
-            String sessionId = "lattice-unwrap";
-            if (Files.exists(envPath)) {
-                String env = Files.readString(envPath, StandardCharsets.UTF_8);
-                for (String line : env.split("\\R")) {
-                    if (line.startsWith("DEBUG_SERVER_URL=")) {
-                        url = line.substring("DEBUG_SERVER_URL=".length()).trim();
-                    } else if (line.startsWith("DEBUG_SESSION_ID=")) {
-                        sessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
-                    }
-                }
-            }
-            String payload = new ObjectMapper().writeValueAsString(Map.of(
-                    "sessionId", sessionId,
-                    "runId", "pre-fix",
-                    "hypothesisId", hypothesisId,
-                    "location", location,
-                    "msg", msg,
-                    "data", data,
-                    "ts", System.currentTimeMillis()
-            ));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            DEBUG_HTTP.send(request, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception ignored) {
-        }
+        // Legacy debug forwarding is intentionally disabled.
     }
 }

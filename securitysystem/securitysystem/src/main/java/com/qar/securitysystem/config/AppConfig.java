@@ -9,7 +9,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 @Configuration
-@EnableConfigurationProperties({AdminProperties.class, AppSecurityProperties.class, PersonSeedProperties.class})
+@EnableConfigurationProperties({AdminProperties.class, AppSecurityProperties.class, PersonSeedProperties.class, FileStorageProperties.class})
 public class AppConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {

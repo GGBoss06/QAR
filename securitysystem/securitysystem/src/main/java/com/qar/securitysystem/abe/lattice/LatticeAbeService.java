@@ -1,7 +1,9 @@
 package com.qar.securitysystem.abe.lattice;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qar.securitysystem.abe.AttributeAuthorityService;
 import com.qar.securitysystem.model.UserEntity;
+import com.qar.securitysystem.repo.UserRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -22,19 +24,24 @@ import java.util.Set;
 @Service
 public class LatticeAbeService {
     public static final String LATTICE_PREFIX = "LABE_LATTICE_BC:";
-    private static final HttpClient DEBUG_HTTP = HttpClient.newHttpClient();
 
     private final LatticePolicyParser policyParser;
     private final LatticeCryptoSupport cryptoSupport;
     private final LatticeAuthorityKeyService authorityKeyService;
+    private final LatticeAttributeKeyService attributeKeyService;
     private final LatticeUserSecretKeyService userSecretKeyService;
+    private final UserRepository userRepository;
+    private final AttributeAuthorityService attributeAuthorityService;
     private final ObjectMapper objectMapper;
 
-    public LatticeAbeService(LatticePolicyParser policyParser, LatticeCryptoSupport cryptoSupport, LatticeAuthorityKeyService authorityKeyService, LatticeUserSecretKeyService userSecretKeyService, ObjectMapper objectMapper) {
+    public LatticeAbeService(LatticePolicyParser policyParser, LatticeCryptoSupport cryptoSupport, LatticeAuthorityKeyService authorityKeyService, LatticeAttributeKeyService attributeKeyService, LatticeUserSecretKeyService userSecretKeyService, UserRepository userRepository, AttributeAuthorityService attributeAuthorityService, ObjectMapper objectMapper) {
         this.policyParser = policyParser;
         this.cryptoSupport = cryptoSupport;
         this.authorityKeyService = authorityKeyService;
+        this.attributeKeyService = attributeKeyService;
         this.userSecretKeyService = userSecretKeyService;
+        this.userRepository = userRepository;
+        this.attributeAuthorityService = attributeAuthorityService;
         this.objectMapper = objectMapper;
     }
 
@@ -46,14 +53,14 @@ public class LatticeAbeService {
             }
             byte[] rootSecret = cryptoSupport.randomBytes(32);
             Envelope envelope = new Envelope();
-            envelope.version = 1;
-            envelope.scheme = "multi-authority-lattice-cpabe-prototype-kyber768-v1";
+            envelope.version = 3;
+            envelope.scheme = "attribute-policy-user-bound-kyber768-v3";
             envelope.policy = policy == null ? "" : policy.trim();
             envelope.policyTree = root;
             envelope.rootDigest = b64(cryptoSupport.digest(rootSecret, aad(policy)));
-            envelope.wrappedFileKey = b64(cryptoSupport.encryptSecretWithAad(rootSecret, fileKey, aad(policy)));
             envelope.leaves = new ArrayList<>();
             share(root, rootSecret, envelope.leaves);
+            envelope.recipients = buildRecipients(rootSecret, fileKey, policy);
             // #region debug-point C:wrap-envelope
             debugReport("C", "LatticeAbeService:wrap",
                     "[DEBUG] wrapped lattice file key",
@@ -80,8 +87,19 @@ public class LatticeAbeService {
             Envelope envelope = decode(wrappedKey);
             LatticeUserSecretKeyService.UserSecretBundle bundle = userSecretKeyService.getOrCreate(user);
             Set<String> attrs = bundle.attributes;
-            Map<String, LatticeUserSecretKeyService.AttributeSecretKey> keys = bundle.attributeKeys;
-            byte[] rootSecret = recoverSecret(envelope.policyTree, attrs, keys, indexLeaves(envelope.leaves));
+            byte[] rootSecret;
+            if (envelope.version >= 3) {
+                rootSecret = recoverSecret(envelope.policyTree, attrs, bundle.attributeKeys, indexLeaves(envelope.leaves));
+            } else if (envelope.version >= 2) {
+                rootSecret = recoverSecret(envelope.policyTree, attrs, bundle.attributeKeys, indexLeaves(envelope.leaves));
+            } else {
+                rootSecret = recoverLegacyForAuthorizedUser(
+                        envelope.policyTree,
+                        attrs,
+                        indexLeaves(envelope.leaves),
+                        authorityKeyService.getAllAuthorities()
+                );
+            }
             // #region debug-point D:unwrap-user
             debugReport("D", "LatticeAbeService:unwrapForUser",
                     "[DEBUG] unwrap lattice file key for user",
@@ -99,6 +117,9 @@ public class LatticeAbeService {
             byte[] expectedDigest = cryptoSupport.digest(rootSecret, aad(policy == null ? envelope.policy : policy));
             if (!constantTimeEquals(expectedDigest, b64d(envelope.rootDigest))) {
                 throw new AccessDeniedException("lattice_root_secret_mismatch");
+            }
+            if (envelope.version >= 3) {
+                return unwrapRecipientFileKey(envelope, rootSecret, bundle, policy == null ? envelope.policy : policy);
             }
             return cryptoSupport.decryptSecretWithAad(rootSecret, b64d(envelope.wrappedFileKey), aad(policy == null ? envelope.policy : policy));
         } catch (AccessDeniedException e) {
@@ -122,8 +143,12 @@ public class LatticeAbeService {
         try {
             Envelope envelope = decode(wrappedKey);
             Map<Integer, LeafCiphertext> leafIndex = indexLeaves(envelope.leaves);
-            Map<String, LatticeAuthorityKeyService.AuthorityKeyMaterial> authorities = authorityKeyService.getAllAuthorities();
-            byte[] rootSecret = recoverForSystem(envelope.policyTree, leafIndex, authorities);
+            Map<String, LatticeAuthorityKeyService.AuthorityKeyMaterial> authorities = envelope.version >= 2
+                    ? Map.of()
+                    : authorityKeyService.getAllAuthorities();
+            byte[] rootSecret = envelope.version >= 2
+                    ? recoverForSystemV2(envelope.policyTree, leafIndex)
+                    : recoverForSystemLegacy(envelope.policyTree, leafIndex, authorities);
             // #region debug-point E:unwrap-system
             debugReport("E", "LatticeAbeService:unwrapForSystem",
                     "[DEBUG] unwrap lattice file key for system",
@@ -140,6 +165,9 @@ public class LatticeAbeService {
             byte[] expectedDigest = cryptoSupport.digest(rootSecret, aad(policy == null ? envelope.policy : policy));
             if (!constantTimeEquals(expectedDigest, b64d(envelope.rootDigest))) {
                 throw new AccessDeniedException("lattice_root_secret_mismatch");
+            }
+            if (envelope.version >= 3) {
+                return unwrapSystemRecipientFileKey(envelope, rootSecret, policy == null ? envelope.policy : policy);
             }
             return cryptoSupport.decryptSecretWithAad(rootSecret, b64d(envelope.wrappedFileKey), aad(policy == null ? envelope.policy : policy));
         } catch (AccessDeniedException e) {
@@ -161,6 +189,17 @@ public class LatticeAbeService {
 
     public boolean isLatticeEnvelope(String wrappedKey) {
         return wrappedKey != null && wrappedKey.startsWith(LATTICE_PREFIX);
+    }
+
+    public boolean isLegacyEnvelope(String wrappedKey) {
+        if (!isLatticeEnvelope(wrappedKey)) {
+            return false;
+        }
+        try {
+            return decode(wrappedKey).version < 3;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("invalid_lattice_envelope", e);
+        }
     }
 
     private void share(LatticePolicyNode node, byte[] secret, List<LeafCiphertext> leaves) {
@@ -194,14 +233,125 @@ public class LatticeAbeService {
         }
     }
 
+    private List<RecipientCiphertext> buildRecipients(byte[] rootSecret, byte[] fileKey, String policy) {
+        List<RecipientCiphertext> recipients = new ArrayList<>();
+        LatticeAttributeKeyService.AttributeKeyMaterial systemKey = attributeKeyService.getAttributeMaterial("system:recovery:v3");
+        recipients.add(createRecipient(
+                "__system__",
+                systemKey.keyId,
+                systemKey.publicKey,
+                rootSecret,
+                fileKey,
+                policy
+        ));
+        for (UserEntity user : userRepository.findAllByOrderByCreatedAtDesc()) {
+            if (!LatticeUserSecretKeyService.isUserAccessEnabled(user)
+                    || !attributeAuthorityService.canUserAccess(policy, user)) {
+                continue;
+            }
+            LatticeUserSecretKeyService.UserSecretBundle bundle = userSecretKeyService.getOrCreate(user);
+            recipients.add(createRecipient(
+                    user.getId(),
+                    bundle.recipientKeyId,
+                    bundle.recipientPublicKey,
+                    rootSecret,
+                    fileKey,
+                    policy
+            ));
+        }
+        return recipients;
+    }
+
+    private RecipientCiphertext createRecipient(String recipientId,
+                                                 String keyId,
+                                                 String publicKey,
+                                                 byte[] rootSecret,
+                                                 byte[] fileKey,
+                                                 String policy) {
+        LatticeCryptoSupport.KyberEncapsulationResult result = cryptoSupport.encapsulate(b64d(publicKey));
+        byte[] wrappingSecret = recipientWrappingSecret(rootSecret, result.secret(), policy, recipientId, keyId);
+        RecipientCiphertext recipient = new RecipientCiphertext();
+        recipient.recipientId = recipientId;
+        recipient.keyId = keyId;
+        recipient.encapsulation = b64(result.encapsulation());
+        recipient.wrappedFileKey = b64(cryptoSupport.encryptSecretWithAad(
+                wrappingSecret,
+                fileKey,
+                recipientAad(policy, recipientId, keyId)
+        ));
+        return recipient;
+    }
+
+    private byte[] unwrapRecipientFileKey(Envelope envelope,
+                                          byte[] rootSecret,
+                                          LatticeUserSecretKeyService.UserSecretBundle bundle,
+                                          String policy) {
+        RecipientCiphertext recipient = findRecipient(envelope.recipients, bundle.userId, bundle.recipientKeyId);
+        if (recipient == null) {
+            throw new AccessDeniedException("lattice_recipient_not_authorized");
+        }
+        byte[] recipientSecret = cryptoSupport.decapsulate(b64d(bundle.recipientPrivateKey), b64d(recipient.encapsulation));
+        byte[] wrappingSecret = recipientWrappingSecret(rootSecret, recipientSecret, policy, recipient.recipientId, recipient.keyId);
+        return cryptoSupport.decryptSecretWithAad(
+                wrappingSecret,
+                b64d(recipient.wrappedFileKey),
+                recipientAad(policy, recipient.recipientId, recipient.keyId)
+        );
+    }
+
+    private byte[] unwrapSystemRecipientFileKey(Envelope envelope, byte[] rootSecret, String policy) {
+        LatticeAttributeKeyService.AttributeKeyMaterial systemKey = attributeKeyService.getAttributeMaterial("system:recovery:v3");
+        RecipientCiphertext recipient = findRecipient(envelope.recipients, "__system__", systemKey.keyId);
+        if (recipient == null) {
+            throw new AccessDeniedException("lattice_system_recipient_missing");
+        }
+        byte[] recipientSecret = cryptoSupport.decapsulate(b64d(systemKey.privateKey), b64d(recipient.encapsulation));
+        byte[] wrappingSecret = recipientWrappingSecret(rootSecret, recipientSecret, policy, recipient.recipientId, recipient.keyId);
+        return cryptoSupport.decryptSecretWithAad(
+                wrappingSecret,
+                b64d(recipient.wrappedFileKey),
+                recipientAad(policy, recipient.recipientId, recipient.keyId)
+        );
+    }
+
+    private byte[] recipientWrappingSecret(byte[] rootSecret,
+                                           byte[] recipientSecret,
+                                           String policy,
+                                           String recipientId,
+                                           String keyId) {
+        return cryptoSupport.digest(
+                rootSecret,
+                crop(recipientSecret, 32),
+                recipientAad(policy, recipientId, keyId)
+        );
+    }
+
+    private static byte[] recipientAad(String policy, String recipientId, String keyId) {
+        return ("LATTICE-RECIPIENT-V3:"
+                + (policy == null ? "" : policy.trim())
+                + ":" + (recipientId == null ? "" : recipientId)
+                + ":" + (keyId == null ? "" : keyId)).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static RecipientCiphertext findRecipient(List<RecipientCiphertext> recipients, String recipientId, String keyId) {
+        if (recipients == null) {
+            return null;
+        }
+        return recipients.stream()
+                .filter(recipient -> recipientId != null && recipientId.equals(recipient.recipientId))
+                .filter(recipient -> keyId != null && keyId.equals(recipient.keyId))
+                .findFirst()
+                .orElse(null);
+    }
+
     private LeafCiphertext createLeaf(LatticePolicyNode node, byte[] secret) {
-        String authority = authorityKeyService.resolveAuthorityForAttribute(node.getAttribute());
-        LatticeAuthorityKeyService.AuthorityKeyMaterial material = authorityKeyService.getAuthorityMaterial(authority);
+        LatticeAttributeKeyService.AttributeKeyMaterial material = attributeKeyService.getAttributeMaterial(node.getAttribute());
         LatticeCryptoSupport.KyberEncapsulationResult result = cryptoSupport.encapsulate(b64d(material.publicKey));
         LeafCiphertext leaf = new LeafCiphertext();
         leaf.nodeId = node.getNodeId();
         leaf.attribute = node.getAttribute();
-        leaf.authorityId = authority;
+        leaf.authorityId = material.authorityId;
+        leaf.keyId = material.keyId;
         leaf.attributeFingerprint = cryptoSupport.fingerprint(node.getAttribute().getBytes(StandardCharsets.UTF_8));
         leaf.encapsulation = b64(result.encapsulation());
         leaf.maskedSecret = b64(cryptoSupport.xor(secret, crop(result.secret(), secret.length)));
@@ -276,9 +426,9 @@ public class LatticeAbeService {
         return any ? combined : null;
     }
 
-    private byte[] recoverForSystem(LatticePolicyNode node,
-                                    Map<Integer, LeafCiphertext> leaves,
-                                    Map<String, LatticeAuthorityKeyService.AuthorityKeyMaterial> authorities) {
+    private byte[] recoverForSystemLegacy(LatticePolicyNode node,
+                                          Map<Integer, LeafCiphertext> leaves,
+                                          Map<String, LatticeAuthorityKeyService.AuthorityKeyMaterial> authorities) {
         if (node == null) {
             return null;
         }
@@ -307,7 +457,7 @@ public class LatticeAbeService {
         }
         if (node.getType() == LatticePolicyNode.Type.OR) {
             for (LatticePolicyNode child : node.getChildren()) {
-                byte[] recovered = recoverForSystem(child, leaves, authorities);
+                byte[] recovered = recoverForSystemLegacy(child, leaves, authorities);
                 if (recovered != null) {
                     return recovered;
                 }
@@ -317,7 +467,87 @@ public class LatticeAbeService {
         byte[] combined = new byte[32];
         boolean any = false;
         for (LatticePolicyNode child : node.getChildren()) {
-            byte[] recovered = recoverForSystem(child, leaves, authorities);
+            byte[] recovered = recoverForSystemLegacy(child, leaves, authorities);
+            if (recovered == null) {
+                return null;
+            }
+            combined = cryptoSupport.xor(combined, recovered);
+            any = true;
+        }
+        return any ? combined : null;
+    }
+
+    private byte[] recoverLegacyForAuthorizedUser(
+            LatticePolicyNode node,
+            Set<String> attrs,
+            Map<Integer, LeafCiphertext> leaves,
+            Map<String, LatticeAuthorityKeyService.AuthorityKeyMaterial> authorities) {
+        if (node == null) {
+            return null;
+        }
+        if (node.isLeaf()) {
+            if (attrs == null || !attrs.contains(node.getAttribute())) {
+                return null;
+            }
+            LeafCiphertext leaf = leaves.get(node.getNodeId());
+            LatticeAuthorityKeyService.AuthorityKeyMaterial material = leaf == null ? null : authorities.get(leaf.authorityId);
+            if (material == null) {
+                return null;
+            }
+            byte[] secret = cryptoSupport.decapsulate(b64d(material.privateKey), b64d(leaf.encapsulation));
+            return cryptoSupport.xor(crop(secret, 32), b64d(leaf.maskedSecret));
+        }
+        if (node.getType() == LatticePolicyNode.Type.OR) {
+            for (LatticePolicyNode child : node.getChildren()) {
+                byte[] recovered = recoverLegacyForAuthorizedUser(child, attrs, leaves, authorities);
+                if (recovered != null) {
+                    return recovered;
+                }
+            }
+            return null;
+        }
+        byte[] combined = new byte[32];
+        boolean any = false;
+        for (LatticePolicyNode child : node.getChildren()) {
+            byte[] recovered = recoverLegacyForAuthorizedUser(child, attrs, leaves, authorities);
+            if (recovered == null) {
+                return null;
+            }
+            combined = cryptoSupport.xor(combined, recovered);
+            any = true;
+        }
+        return any ? combined : null;
+    }
+
+    private byte[] recoverForSystemV2(LatticePolicyNode node, Map<Integer, LeafCiphertext> leaves) {
+        if (node == null) {
+            return null;
+        }
+        if (node.isLeaf()) {
+            LeafCiphertext leaf = leaves.get(node.getNodeId());
+            if (leaf == null) {
+                return null;
+            }
+            LatticeAttributeKeyService.AttributeKeyMaterial material = attributeKeyService.getAttributeMaterial(leaf.attribute);
+            if (leaf.keyId != null && !leaf.keyId.equals(material.keyId)) {
+                throw new IllegalArgumentException("lattice_attribute_key_mismatch");
+            }
+            byte[] secret = cryptoSupport.decapsulate(b64d(material.privateKey), b64d(leaf.encapsulation));
+            return cryptoSupport.xor(crop(secret, 32), b64d(leaf.maskedSecret));
+        }
+        if (node.getType() == LatticePolicyNode.Type.OR) {
+            for (LatticePolicyNode child : node.getChildren()) {
+                byte[] recovered = recoverForSystemV2(child, leaves);
+                if (recovered != null) {
+                    return recovered;
+                }
+            }
+            return null;
+        }
+        byte[] combined = new byte[32];
+        boolean any = false;
+        for (LatticePolicyNode child : node.getChildren()) {
+            byte[] recovered = recoverForSystemV2(child, leaves);
             if (recovered == null) {
                 return null;
             }
@@ -380,6 +610,7 @@ public class LatticeAbeService {
         public String wrappedFileKey;
         public LatticePolicyNode policyTree;
         public List<LeafCiphertext> leaves;
+        public List<RecipientCiphertext> recipients;
     }
 
     public static class LeafCiphertext {
@@ -387,8 +618,16 @@ public class LatticeAbeService {
         public String attribute;
         public String attributeFingerprint;
         public String authorityId;
+        public String keyId;
         public String encapsulation;
         public String maskedSecret;
+    }
+
+    public static class RecipientCiphertext {
+        public String recipientId;
+        public String keyId;
+        public String encapsulation;
+        public String wrappedFileKey;
     }
 
     private Map<String, Object> summarizeLeaves(List<LeafCiphertext> leaves) {
@@ -420,35 +659,6 @@ public class LatticeAbeService {
     }
 
     private static void debugReport(String hypothesisId, String location, String msg, Map<String, Object> data) {
-        try {
-            Path envPath = Path.of(".dbg", "lattice-unwrap.env");
-            String url = "http://127.0.0.1:7777/event";
-            String sessionId = "lattice-unwrap";
-            if (Files.exists(envPath)) {
-                String env = Files.readString(envPath, StandardCharsets.UTF_8);
-                for (String line : env.split("\\R")) {
-                    if (line.startsWith("DEBUG_SERVER_URL=")) {
-                        url = line.substring("DEBUG_SERVER_URL=".length()).trim();
-                    } else if (line.startsWith("DEBUG_SESSION_ID=")) {
-                        sessionId = line.substring("DEBUG_SESSION_ID=".length()).trim();
-                    }
-                }
-            }
-            String payload = new ObjectMapper().writeValueAsString(Map.of(
-                    "sessionId", sessionId,
-                    "runId", "pre-fix",
-                    "hypothesisId", hypothesisId,
-                    "location", location,
-                    "msg", msg,
-                    "data", data,
-                    "ts", System.currentTimeMillis()
-            ));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            DEBUG_HTTP.send(request, HttpResponse.BodyHandlers.discarding());
-        } catch (Exception ignored) {
-        }
+        // Legacy debug forwarding is intentionally disabled.
     }
 }

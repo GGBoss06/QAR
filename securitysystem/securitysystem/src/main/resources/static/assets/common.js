@@ -1,6 +1,12 @@
 async function apiFetch(path, opts) {
   const headers = Object.assign({"Accept": "application/json"}, opts && opts.headers ? opts.headers : {})
-  const res = await fetch(path, Object.assign({ credentials: "include", headers }, opts || {}))
+  const method = (opts && opts.method ? opts.method : "GET").toUpperCase()
+  if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+    if (!window.__csrf || !window.__csrf.token) await initCsrf()
+    headers[window.__csrf.headerName || "X-XSRF-TOKEN"] = window.__csrf.token
+  }
+  const requestOptions = Object.assign({}, opts || {}, { credentials: "include", headers })
+  const res = await fetch(path, requestOptions)
   const ct = res.headers.get("content-type") || ""
   const data = ct.includes("application/json") ? await res.json().catch(() => null) : await res.text().catch(() => "")
   if (!res.ok) {
@@ -59,8 +65,19 @@ function showToast(title, message, variant) {
 }
 
 async function initCsrf() {
-  window.__csrf = null
-  return null
+  if (window.__csrf && window.__csrf.token) return window.__csrf
+  const res = await fetch("/api/auth/csrf", {
+    method: "GET",
+    credentials: "include",
+    headers: { "Accept": "application/json" }
+  })
+  if (!res.ok) throw new Error("csrf_token_unavailable")
+  const data = await res.json()
+  window.__csrf = {
+    token: data.token,
+    headerName: data.headerName || "X-XSRF-TOKEN"
+  }
+  return window.__csrf
 }
 
 async function loadMe() {

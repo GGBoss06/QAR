@@ -256,8 +256,9 @@ body:not(.auth-page) .table td {
 .link{color:var(--primary);text-decoration:none;font-weight:600}
 .link:hover{text-decoration:underline}
 
-.grid{display:grid;grid-template-columns:1fr 1.2fr;gap:16px}
-@media (max-width:1023px){.grid{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;min-width:0}
+.grid>*{min-width:0}
+@media (max-width:1023px){.grid{grid-template-columns:minmax(0,1fr)!important}}
 .policy-option-list{display:flex;flex-wrap:wrap;gap:8px;min-height:40px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:#fff}
 .policy-option-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid rgba(37,99,235,.18);border-radius:999px;background:rgba(37,99,235,.05);font-size:12px;color:var(--text)}
 .policy-option-chip input{margin:0}
@@ -274,7 +275,7 @@ body:not(.auth-page) .table td {
 .mini-stat-value{font-size:24px;font-weight:700;color:var(--primary)}
 .table tr.selected td{background:rgba(37,99,235,.08)!important}
 
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0;max-width:100%}
 .card-h{padding:20px 24px 0 24px}
 .card-b{padding:24px}
 
@@ -319,6 +320,10 @@ body:not(.auth-page) .table td {
 @media (max-width:768px){.split{flex-direction:column;align-items:stretch}}
 
 /* 统计卡片样式 */
+.admin-stats-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .stats-card {
   background: linear-gradient(135deg, #f8fafc, #ffffff);
   border: 1px solid var(--border);
@@ -326,6 +331,8 @@ body:not(.auth-page) .table td {
   box-shadow: var(--shadow);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   min-height: 160px;
+  display: flex;
+  flex-direction: column;
 }
 
 .stats-card:hover {
@@ -335,10 +342,27 @@ body:not(.auth-page) .table td {
 
 .stats-card .card-h {
   padding: 18px 20px 10px;
+  min-height: 54px;
+}
+
+.stats-card .card-h .h2 {
+  margin-bottom: 0;
 }
 
 .stats-card .card-b {
   padding: 10px 20px 24px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+@media (max-width: 1023px) {
+  .admin-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+
+@media (max-width: 640px) {
+  .admin-stats-grid { grid-template-columns: minmax(0, 1fr) !important; }
 }
 
 .stats-value {
@@ -355,9 +379,17 @@ body:not(.auth-page) .table td {
 
 /* 表格响应式容器 */
 .table-responsive {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
   border-radius: 8px;
   min-height: 250px;
+}
+
+.table-responsive .table {
+  width: max-content;
+  min-width: 100%;
 }
 
 .table-responsive::-webkit-scrollbar {

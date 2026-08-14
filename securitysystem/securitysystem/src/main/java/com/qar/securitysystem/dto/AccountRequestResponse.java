@@ -12,7 +12,6 @@ public class AccountRequestResponse {
     private String createdAt;
     private String reviewedAt;
     private String adminNote;
-    private String privateKey;
 
     public String getId() {
         return id;
@@ -100,14 +99,6 @@ public class AccountRequestResponse {
 
     public void setAdminNote(String adminNote) {
         this.adminNote = adminNote;
-    }
-
-    public String getPrivateKey() {
-        return privateKey;
-    }
-
-    public void setPrivateKey(String privateKey) {
-        this.privateKey = privateKey;
     }
 }
 

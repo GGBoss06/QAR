@@ -206,20 +206,29 @@ function renderSelectedPerson() {
   const digestText = person.secretBundleAttributeDigest || "-"
   const revokedAtText = person.accessRevokedAt ? person.accessRevokedAt.replace("T", " ").replace("Z", "").slice(0, 19) : "-"
   const revokedReasonText = person.accessRevokedReason || "-"
-  summary.innerHTML = `
-    <div><strong>${person.fullName || "-"}</strong>（${person.personNo || "-"}）</div>
-    <div>部门：${person.department || "-"}，职责域：${person.dutyDomain || "-"}</div>
-    <div>人员分类：${person.personCategory || "-"}，机队：${person.fleetGroup || "-"}</div>
-    <div>账号状态：${accountText}</div>
-    <div>访问状态：${accessText}</div>
-    <div>发钥状态：${keyText}</div>
-    <div>材料版本：${versionText}</div>
-    <div>最近发钥：${issuedAtText}</div>
-    <div>最近原因：${issuedReasonText}</div>
-    <div>最近冻结：${revokedAtText}</div>
-    <div>冻结原因：${revokedReasonText}</div>
-    <div>属性摘要：${digestText}</div>
-  `
+  summary.replaceChildren()
+  const appendLine = (...parts) => {
+    const line = document.createElement("div")
+    for (const part of parts) {
+      if (part instanceof Node) line.appendChild(part)
+      else line.appendChild(document.createTextNode(String(part)))
+    }
+    summary.appendChild(line)
+  }
+  const name = document.createElement("strong")
+  name.textContent = person.fullName || "-"
+  appendLine(name, `（${person.personNo || "-"}）`)
+  appendLine(`部门：${person.department || "-"}，职责域：${person.dutyDomain || "-"}`)
+  appendLine(`人员分类：${person.personCategory || "-"}，机队：${person.fleetGroup || "-"}`)
+  appendLine(`账号状态：${accountText}`)
+  appendLine(`访问状态：${accessText}`)
+  appendLine(`发钥状态：${keyText}`)
+  appendLine(`材料版本：${versionText}`)
+  appendLine(`最近发钥：${issuedAtText}`)
+  appendLine(`最近原因：${issuedReasonText}`)
+  appendLine(`最近冻结：${revokedAtText}`)
+  appendLine(`冻结原因：${revokedReasonText}`)
+  appendLine(`属性摘要：${digestText}`)
   renderChipList("person-labe-attributes", person.attributes || [])
   renderChipList("person-labe-authorities", person.authorities || [])
 }

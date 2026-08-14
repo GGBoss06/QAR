@@ -1,6 +1,7 @@
 package com.qar.securitysystem.config;
 
 import com.qar.securitysystem.security.SessionAuthFilter;
+import com.qar.securitysystem.security.StatelessCsrfTokenRepository;
 import com.qar.securitysystem.security.AuditLogFilter;
 import com.qar.securitysystem.service.AuditLogService;
 import com.qar.securitysystem.service.SessionService;
@@ -16,12 +17,12 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.PrintWriter;
-import java.util.List;
+import java.time.Duration;
 
 @Configuration
 public class SecurityConfig {
@@ -42,23 +43,21 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, SessionAuthFilter sessionAuthFilter, TransportCryptoFilter transportCryptoFilter, AuditLogFilter auditLogFilter) throws Exception {
+        StatelessCsrfTokenRepository csrfRepository = new StatelessCsrfTokenRepository(Duration.ofHours(1));
+        CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
         http
-                .cors(cors -> cors.configurationSource(request -> {
-                    CorsConfiguration config = new CorsConfiguration();
-                    config.setAllowedOrigins(List.of("*"));
-                    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-                    config.setAllowedHeaders(List.of("*"));
-                    return config;
-                }))
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfRepository)
+                        .csrfTokenRequestHandler(csrfHandler))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/", "/auth", "/h2/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/", "/auth").permitAll()
                         .requestMatchers(HttpMethod.GET, "/workbench", "/workbench.html").authenticated()
                         .requestMatchers(HttpMethod.GET, "/feedback", "/feedback.html").authenticated()
                         .requestMatchers(HttpMethod.GET, "/admin", "/admin.html", "/admin-data.html", "/admin-flight.html", "/admin-qar.html").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/auth.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/assets/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/files").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
@@ -73,8 +72,19 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler())
                 )
                 .headers(headers -> headers
-                        .frameOptions(frame -> frame.disable())
-                );
+                        .frameOptions(frame -> frame.deny())
+                        .addHeaderWriter((request, response) -> {
+                            response.setHeader("Content-Security-Policy",
+                                    "default-src 'self'; "
+                                            + "script-src 'self' https://code.jquery.com; "
+                                            + "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+                                            + "font-src 'self' https://cdnjs.cloudflare.com data:; "
+                                            + "img-src 'self' data: blob:; "
+                                            + "connect-src 'self'; object-src 'none'; "
+                                            + "base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+                            response.setHeader("Referrer-Policy", "no-referrer");
+                            response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+                        }));
 
         return http.build();
     }

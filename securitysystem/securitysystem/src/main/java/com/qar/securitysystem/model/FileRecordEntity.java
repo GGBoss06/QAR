@@ -31,15 +31,15 @@ public class FileRecordEntity {
     private String policy;
 
     @Lob
-    @Column(name = "aad_policy_binding")
+    @Column(name = "aad_policy_binding", columnDefinition = "LONGTEXT")
     private String aadPolicyBinding;
 
     @Lob
-    @Column(name = "wrapped_key")
+    @Column(name = "wrapped_key", columnDefinition = "LONGTEXT")
     private String wrappedKey;
 
     @Lob
-    @Column(name = "encrypted_data", nullable = false)
+    @Column(name = "encrypted_data", nullable = false, columnDefinition = "LONGTEXT")
     private String encryptedData;
 
     @Column(name = "created_at", nullable = false)
